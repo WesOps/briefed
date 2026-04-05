@@ -137,21 +137,16 @@ function categorizeEnvVar(name: string): string {
 export function formatEnvVars(vars: EnvVar[]): string {
   if (vars.length === 0) return "";
 
-  const lines: string[] = ["Environment variables:"];
-  const byCategory = new Map<string, EnvVar[]>();
-  for (const v of vars) {
+  // Only show required vars without defaults — things that will break if missing
+  const critical = vars.filter(v => v.required && !v.hasDefault);
+  if (critical.length === 0) return "";
+
+  const byCategory = new Map<string, string[]>();
+  for (const v of critical) {
     if (!byCategory.has(v.category)) byCategory.set(v.category, []);
-    byCategory.get(v.category)!.push(v);
+    byCategory.get(v.category)!.push(v.name);
   }
 
-  for (const [cat, catVars] of byCategory) {
-    const names = catVars.map((v) => {
-      let s = v.name;
-      if (v.required) s += " (required)";
-      return s;
-    });
-    lines.push(`  ${cat}: ${names.join(", ")}`);
-  }
-
-  return lines.join("\n");
+  const parts = [...byCategory].map(([cat, names]) => `${cat}: ${names.join(", ")}`);
+  return `Required env: ${parts.join(" | ")}`;
 }

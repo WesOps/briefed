@@ -303,12 +303,6 @@ export async function initCommand(opts: InitOptions) {
   if (testMappings.length > 0) {
     enrichedSkeleton += "\nTests: " + testMappings.length + " source files have matching test files";
   }
-  if (errorPatterns.summary.length > 0) {
-    enrichedSkeleton += "\nError handling:\n" + errorPatterns.summary.map((s) => `  - ${s}`).join("\n");
-  }
-  if (usageText) {
-    enrichedSkeleton += "\n" + usageText;
-  }
   const scriptsText = formatScripts(scripts);
   if (scriptsText) enrichedSkeleton += "\n" + scriptsText;
   const schemasText = formatSchemas(schemas);

@@ -237,37 +237,21 @@ function tryRead(path: string): string | null {
  * Format frontend info for skeleton inclusion.
  */
 export function formatFrontend(info: FrontendInfo): string {
-  const lines: string[] = [];
+  const parts: string[] = [];
 
-  if (info.framework) {
-    let header = `Frontend: ${info.framework}`;
-    if (info.styling) header += ` + ${info.styling}`;
-    if (info.uiLibrary) header += ` + ${info.uiLibrary}`;
-    lines.push(header);
-  }
-
+  // Route map — compact, one line. Saves a glob + directory traversal.
   if (info.pages.length > 0) {
-    lines.push("Pages:");
-    for (const p of info.pages.slice(0, 20)) {
-      let line = `  ${p.path.replace(/\\/g, "/")}`;
-      if (p.isProtected) line += " (auth)";
-      lines.push(line);
-    }
-    if (info.pages.length > 20) lines.push(`  ... +${info.pages.length - 20} more`);
+    const routes = info.pages.map(p => {
+      const path = p.path.replace(/\\/g, "/");
+      return p.isProtected ? `${path}(auth)` : path;
+    });
+    parts.push(`Routes: ${routes.join(", ")}`);
   }
 
-  if (info.components.length > 0) {
-    lines.push(`Components: ${info.components.length} in total`);
-    const withProps = info.components.filter((c) => c.props.length > 0).slice(0, 10);
-    for (const c of withProps) {
-      lines.push(`  <${c.name}> props: ${c.props.join(", ")}`);
-    }
-  }
-
+  // State stores — hard to discover, scattered across files
   if (info.stateStores.length > 0) {
-    lines.push(`State: ${info.stateStores.join(", ")}`);
+    parts.push(`State: ${info.stateStores.join(", ")}`);
   }
 
-  if (lines.length === 0) return "";
-  return lines.join("\n");
+  return parts.join("\n");
 }

@@ -181,21 +181,14 @@ export function detectConventions(
  * Format conventions for inclusion in CLAUDE.md or rules.
  */
 export function formatConventions(conv: ProjectConventions): string {
-  const lines: string[] = [];
   const all = [
     ...conv.naming,
     ...conv.errorHandling,
     ...conv.patterns,
-    ...conv.testing,
     ...conv.imports,
     ...conv.other,
   ];
 
   if (all.length === 0) return "";
-
-  lines.push("Conventions:");
-  for (const c of all) {
-    lines.push(`  - ${c}`);
-  }
-  return lines.join("\n");
+  return `Conventions: ${all.join(", ")}`;
 }
