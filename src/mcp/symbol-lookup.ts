@@ -39,6 +39,7 @@ export function symbolLookup(root: string, name: string): CallToolResult {
     file: string;
     line: number;
     exported: boolean;
+    calls?: string[];
   }> = [];
 
   for (const ext of extractions) {
@@ -52,6 +53,7 @@ export function symbolLookup(root: string, name: string): CallToolResult {
           file: ext.path,
           line: sym.line,
           exported: sym.exported,
+          calls: sym.calls,
         });
       }
     }
@@ -85,6 +87,9 @@ export function symbolLookup(root: string, name: string): CallToolResult {
       lines.push(`**Description:** ${match.description}`);
     }
     lines.push(`**Exported:** ${match.exported ? "yes" : "no (internal)"}`);
+    if (match.calls && match.calls.length > 0) {
+      lines.push(`**Calls:** ${match.calls.join(", ")}`);
+    }
     lines.push("");
 
     // Symbol-level callers (who imports this symbol)

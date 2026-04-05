@@ -191,6 +191,19 @@ export function generateSimpleContracts(
       });
     }
 
+    // Function-level call graph: which imported symbols each function calls
+    const callEntries: string[] = [];
+    for (const ext of modExtractions) {
+      for (const sym of ext.symbols) {
+        if (sym.calls && sym.calls.length > 0 && sym.exported) {
+          callEntries.push(`${sym.name} → ${sym.calls.join(", ")}`);
+        }
+      }
+    }
+    if (callEntries.length > 0) {
+      contract.call_graph = callEntries.slice(0, 20);
+    }
+
     if (deps.size > 0) {
       contract.dependencies = [...deps];
     }

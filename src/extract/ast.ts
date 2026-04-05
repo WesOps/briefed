@@ -81,6 +81,41 @@ export function extractWithAst(filePath: string): FileExtraction | null {
     return "function";
   }
 
+  // Collect all imported names for call graph detection
+  const importedNames = new Set<string>();
+
+  /** Scan a function body for calls to imported symbols */
+  function findCalls(body: ts.Node | undefined): string[] | undefined {
+    if (!body || importedNames.size === 0) return undefined;
+    const called = new Set<string>();
+    function walkCalls(node: ts.Node) {
+      // Direct call: foo() or foo.bar()
+      if (ts.isCallExpression(node)) {
+        const expr = node.expression;
+        if (ts.isIdentifier(expr) && importedNames.has(expr.text)) {
+          called.add(expr.text);
+        } else if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.expression) && importedNames.has(expr.expression.text)) {
+          called.add(expr.expression.text);
+        }
+      }
+      // Type references: `: SomeType`, `as SomeType`, generic params
+      if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && importedNames.has(node.typeName.text)) {
+        called.add(node.typeName.text);
+      }
+      // Identifier usage (e.g. passing as argument, assignment)
+      if (ts.isIdentifier(node) && importedNames.has(node.text)) {
+        // Only count if parent is not the import declaration itself
+        const parent = node.parent;
+        if (parent && !ts.isImportSpecifier(parent) && !ts.isImportClause(parent)) {
+          called.add(node.text);
+        }
+      }
+      ts.forEachChild(node, walkCalls);
+    }
+    walkCalls(body);
+    return called.size > 0 ? [...called].sort() : undefined;
+  }
+
   function visit(node: ts.Node) {
     // Import declarations
     if (ts.isImportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
@@ -103,6 +138,7 @@ export function extractWithAst(filePath: string): FileExtraction | null {
       }
 
       imports.push({ source, names, isRelative: source.startsWith(".") });
+      for (const n of names) importedNames.add(n);
       return;
     }
 
@@ -120,6 +156,7 @@ export function extractWithAst(filePath: string): FileExtraction | null {
         exported,
         line: getLineNumber(node),
         confidence: "ast",
+        calls: findCalls(node.body),
       });
       return;
     }
@@ -163,6 +200,7 @@ export function extractWithAst(filePath: string): FileExtraction | null {
             exported: false,
             line: getLineNumber(member),
             confidence: "ast",
+            calls: ts.isMethodDeclaration(member) ? findCalls(member.body) : undefined,
           });
         }
       }
@@ -250,6 +288,7 @@ export function extractWithAst(filePath: string): FileExtraction | null {
             exported: true,
             line: getLineNumber(node),
             confidence: "ast",
+            calls: findCalls(fn.body),
           });
         } else {
           // Non-function export (constant, config object, etc.)
