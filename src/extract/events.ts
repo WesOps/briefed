@@ -61,7 +61,7 @@ export function extractEvents(root: string): EventContract[] {
   return [...events.values()].filter(e => !noise.has(e.name.toLowerCase()));
 }
 
-function addEvent(events: Map<string, EventContract>, name: string, type: "webhook" | "event" | "message", file: string, content: string, match: string) {
+function addEvent(events: Map<string, EventContract>, name: string, type: "webhook" | "event" | "message", file: string, _content: string, match: string) {
   if (!events.has(name)) {
     events.set(name, { name, type, emitters: [], handlers: [] });
   }

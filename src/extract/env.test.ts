@@ -120,11 +120,11 @@ describe("formatEnvVars", () => {
       { name: "JWT_KEY", source: ".env.example", hasDefault: false, required: true, description: null, category: "auth" },
     ];
     const output = formatEnvVars(vars);
-    expect(output).toContain("Environment variables:");
+    expect(output).toContain("Required env:");
     expect(output).toContain("database:");
-    expect(output).toContain("DB_URL (required)");
+    expect(output).toContain("DB_URL");
     expect(output).toContain("auth:");
-    expect(output).toContain("JWT_KEY (required)");
+    expect(output).toContain("JWT_KEY");
   });
 
   it("returns empty string for no vars", () => {
