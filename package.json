@@ -1,6 +1,6 @@
 {
   "name": "briefed",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Adaptive Context Engine — compile your codebase into focused, token-efficient context for AI coding tools",
   "type": "module",
   "bin": {
@@ -14,7 +14,16 @@
     "bench": "node dist/cli.js bench",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["ai", "context", "claude", "cursor", "copilot", "llm", "codebase", "developer-tools"],
+  "keywords": [
+    "ai",
+    "context",
+    "claude",
+    "cursor",
+    "copilot",
+    "llm",
+    "codebase",
+    "developer-tools"
+  ],
   "author": "Wesley",
   "license": "MIT",
   "homepage": "https://github.com/WesOps/briefed",
@@ -25,15 +34,21 @@
   "bugs": {
     "url": "https://github.com/WesOps/briefed/issues"
   },
-  "engines": { "node": ">=20" },
-  "files": ["dist", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "commander": "^13.1.0",
-    "web-tree-sitter": "^0.24.7",
-    "glob": "^11.0.1",
-    "simple-git": "^3.27.0",
+    "glob": "^13.0.6",
+    "js-yaml": "^4.1.0",
     "minimatch": "^10.0.1",
-    "js-yaml": "^4.1.0"
+    "simple-git": "^3.27.0",
+    "web-tree-sitter": "^0.24.7"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
