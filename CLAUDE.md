@@ -93,8 +93,48 @@ frontend.ts ★2
   extractFrontend(root: string): FrontendInfo — Extract frontend-specific context: pages, components, state, styling.
   formatFrontend(info: FrontendInfo): string — Format frontend info for skeleton inclusion.
 infra.ts ★2: InfraInfo, InfraService, extractInfra — Extract infrastructure configuration., formatInfra — Format infra info for skeleton inclusion.
+usage-examples.ts ★2: UsageExample, findUsageExamples — Find how functions/classes are actually USED in the codebase., formatUsageExamples — Format usage examples for context injection.
+error-patterns.ts ★1: ErrorPattern, ErrorPatternType, detectErrorPatterns — Detect the project's error handling patterns.
+history.ts ★1: FileHistory, CommitInfo, getFileHistory — Extract recent git history for files., getBatchHistory — Get history for multiple files efficiently., formatHistory — Format file history for context injection.
+tests.ts ★1: TestMapping, findTestMappings — Find test files that correspond to source files., formatTestContext — Format test mappings for inclusion in the skeleton or contracts.
+api-schema.ts: ApiSchemaInfo, ApiSchemaEndpoint, extractApiSchema — Extract OpenAPI/Swagger and GraphQL schema information., formatApiSchema
+ast.test.ts: 
+auth.ts: AuthInfo, extractAuth, formatAuth
+caching.ts: CachePattern, extractCaching, formatCaching
+complexity.test.ts: 
+deep.ts: deepAnnotate — Deep analysis: use Claude to generate one-line behavioral descriptions, mergeAnnotations — Merge deep annotations into extractions (mutates in place)., generateDeepRules — Generate .claude/rules/ files with behavioral descriptions per directory., generateSystemOverview — Generate a high-level system overview — how modules connect and data flows.
+depgraph.test.ts: 
+deprecations.ts: Deprecation, extractDeprecations, formatDeprecations
+events.ts: EventContract, extractEvents — Extract event/webhook/message contracts., formatEvents
+feature-flags.ts: FeatureFlag, extractFeatureFlags, formatFeatureFlags
+integrations.ts: Integration, extractIntegrations, formatIntegrations
+jobs.ts: BackgroundJob, extractJobs, formatJobs
+migrations.ts: Migration, extractMigrations, formatMigrations
 
-<!-- briefed skeleton: 17 files, ~1018 tokens -->
+## src/utils/ (7 files)
+log.ts ★9
+  debug(msg: string): void — Lightweight logging utilities.
+  warn(msg: string): void
+tokens.ts ★5
+  countTokens(text: string): number — Estimate token count for a string
+  formatTokens(count: number): string — Format token count for display
+  formatBytes(bytes: number): string — Format byte count for display
+pagerank.ts ★2: GraphNode — Simple PageRank implementation for dependency graph ranking., computePageRank — Compute PageRank scores for a file dependency graph., computeRefCounts — Get reference count (in-degree) for each node.
+detect.ts ★5
+  interface StackInfo
+  detectStack(root: string): StackInfo — Detect the project's tech stack from config files
+  extToLanguage(ext: string): string | null — Map file extension to language name
+  PARSEABLE_EXTENSIONS — File extensions we should parse
+  SKIP_DIRS — Directories to always skip
+pagerank.test.ts: 
+
+## src/deliver/ (7 files)
+git-hook.ts ★3
+  installGitHook(root: string) — Install a git post-commit hook that auto-updates briefed context.
+  removeGitHook(root: string) — Remove briefed's git hook.
+claudemd.ts ★1: updateClaudeMd — Append or update the briefed skeleton section in CLAUDE.md., saveSkeletonFile — Save the skeleton as a standalone file in .briefed/ for hook re-injection.
+
+<!-- briefed skeleton: 41 files, ~1872 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
 Tests: 15 source files have matching test files
 Error handling:
@@ -104,24 +144,24 @@ Error handling:
   - Uses schema validation (Zod/Joi/Yup) for input validation
 Usage examples:
   countTokens: const tokens = countTokens(content); (doctor.ts:30)
-  countTokens: const skeletonTokens = countTokens(skeleton); (init.ts:61)
+  countTokens: const skeletonTokens = countTokens(skeleton); (init.ts:67)
   countTokens: const tokens = countTokens(skeleton); (stats.ts:19)
-  scanFiles: const scan = scanFiles(root); (init.ts:48)
+  scanFiles: const scan = scanFiles(root); (init.ts:47)
   scanFiles: const result = scanFiles(tmpDir); (scanner.test.ts:21)
   scanFiles: const scan = scanFiles(root); (blast-radius.ts:15)
-  formatTokens: console.log(`  Skeleton: ${formatTokens(skeletonTokens)} tokens`); (init.ts:62)
+  formatTokens: console.log(`  Skeleton: ${formatTokens(skeletonTokens)} tokens`); (init.ts:68)
   formatTokens: console.log(`  L1 Skeleton:     ${formatTokens(tokens)} tokens (${skeleton.length} chars)`); (stats.ts:20)
   formatTokens: expect(formatTokens(500)).toBe("500"); (tokens.test.ts:38)
   buildDepGraph: const graph = buildDepGraph(extractions, "/project"); (depgraph.test.ts:25)
-  buildDepGraph: const depGraph = buildDepGraph(extractions, root); (pipeline.ts:95)
+  buildDepGraph: const depGraph = buildDepGraph(extractions, root); (pipeline.ts:136)
   buildDepGraph: const depGraph = buildDepGraph(extractions, root); (blast-radius.ts:27)
-  extractFile: const extraction = extractFile(file.absolutePath, root); (pipeline.ts:81)
+  extractFile: const extraction = extractFile(file.absolutePath, root); (pipeline.ts:104)
   extractFile: const result = extractFile(file, tmpDir); (signatures.test.ts:25)
   extractFile: const ext = extractFile(f.absolutePath, root); (blast-radius.ts:18)
-  extractSchemas: schemas = extractSchemas(root); (pipeline.ts:186)
+  extractSchemas: schemas = extractSchemas(root); (pipeline.ts:227)
   extractSchemas: const schemas = extractSchemas(root); (blast-radius.ts:67)
   extractSchemas: const schemas = extractSchemas(root); (schema-lookup.ts:8)
-  extractRoutes: routes = extractRoutes(root); (pipeline.ts:194)
+  extractRoutes: routes = extractRoutes(root); (pipeline.ts:235)
   extractRoutes: const routes = extractRoutes(root); (blast-radius.ts:61)
 Commands:
   build: tsc
