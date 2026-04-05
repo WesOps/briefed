@@ -34,6 +34,7 @@ import { extractFeatureFlags, formatFeatureFlags } from "../extract/feature-flag
 import { extractCaching, formatCaching } from "../extract/caching.js";
 import { extractAuth, formatAuth } from "../extract/auth.js";
 import { extractEvents, formatEvents } from "../extract/events.js";
+import { deepAnnotate, mergeAnnotations } from "../extract/deep.js";
 import { generateLearningHookScript } from "../learn/tracker.js";
 import { countTokens, formatTokens } from "../utils/tokens.js";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
@@ -46,6 +47,7 @@ interface InitOptions {
   maxTokens: string;
   skipHooks?: boolean;
   skipRules?: boolean;
+  deep?: boolean;
 }
 
 export async function initCommand(opts: InitOptions) {
@@ -124,6 +126,14 @@ export async function initCommand(opts: InitOptions) {
     ? complexityScores.reduce((s, c) => s + c.score, 0) / complexityScores.length
     : 0;
   console.log(`  Average complexity: ${avgComplexity.toFixed(1)}/10`);
+
+  // Step 5b: Deep analysis (optional — uses Claude to describe functions)
+  if (opts.deep) {
+    console.log("  Running deep analysis (Claude-powered)...");
+    const annotations = await deepAnnotate(extractions, depGraph, complexityScores, root);
+    const annotated = mergeAnnotations(extractions, annotations);
+    console.log(`  Annotated ${annotated} functions with behavioral descriptions`);
+  }
 
   // Step 6: Generate L1 skeleton
   console.log("  Generating skeleton...");

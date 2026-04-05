@@ -118,15 +118,14 @@ export function generateSkeleton(
           lines.push(`  ... +${exportedSymbols.length - 10} more exports`);
         }
       } else {
-        // Compact: just file name with export count
+        // Compact: file name with all export names
         const exportNames = exportedSymbols
-          .slice(0, 5)
-          .map((s) => s.name.split(".").pop())
+          .map((s) => {
+            const name = s.name.split(".").pop()!;
+            return s.description ? `${name} — ${s.description}` : name;
+          })
           .join(", ");
-        const suffix = exportedSymbols.length > 5
-          ? ` +${exportedSymbols.length - 5} more`
-          : "";
-        const compactLine = `${fname}${refTag}: ${exportNames}${suffix}`;
+        const compactLine = `${fname}${refTag}: ${exportNames}`;
         lines.push(compactLine);
         tokenCount += countTokens(compactLine);
       }
