@@ -39,7 +39,9 @@ export function extractRoutes(root: string): Route[] {
     ignore: ["node_modules/**"],
   });
   for (const f of nextPagesRoutes) {
-    const path = "/api/" + f.replace(/^pages\/api\//, "").replace(/\.\w+$/, "").replace(/\/index$/, "");
+    // Skip [...nextauth] and similar catch-all auth handlers — they're implementation details
+    const cleanPath = f.replace(/\\/g, "/").replace(/^pages\/api\//, "").replace(/\.\w+$/, "").replace(/\/index$/, "");
+    const path = "/api/" + cleanPath;
     routes.push({ method: "ALL", path, handler: "default", file: f, middleware: [] });
   }
 
@@ -155,21 +157,26 @@ function extractMiddleware(content: string, matchIndex: number): string[] {
 export function formatRoutes(routes: Route[]): string {
   if (routes.length === 0) return "";
 
-  const lines: string[] = ["API endpoints:"];
+  const lines: string[] = ["API:"];
 
-  // Group by path prefix
-  const grouped = new Map<string, Route[]>();
+  // Deduplicate and group by path
+  const grouped = new Map<string, Set<string>>();
+  const mwByPath = new Map<string, string[]>();
   for (const r of routes) {
-    const prefix = r.path.split("/").slice(0, 3).join("/");
-    if (!grouped.has(prefix)) grouped.set(prefix, []);
-    grouped.get(prefix)!.push(r);
+    // Normalize path separators
+    const path = r.path.replace(/\\/g, "/");
+    if (!grouped.has(path)) grouped.set(path, new Set());
+    grouped.get(path)!.add(r.method);
+    if (r.middleware.length > 0) {
+      mwByPath.set(path, [...new Set([...(mwByPath.get(path) || []), ...r.middleware])]);
+    }
   }
 
-  for (const [prefix, group] of grouped) {
-    const methods = group.map((r) => r.method).join(", ");
-    const mw = group.flatMap((r) => r.middleware).filter(Boolean);
-    let line = `  ${methods} ${prefix}`;
-    if (mw.length > 0) line += ` [${[...new Set(mw)].join(", ")}]`;
+  for (const [path, methods] of grouped) {
+    const methodStr = [...methods].join(",");
+    const mw = mwByPath.get(path);
+    let line = `  ${methodStr} ${path}`;
+    if (mw && mw.length > 0) line += ` [${mw.join(", ")}]`;
     lines.push(line);
   }
 

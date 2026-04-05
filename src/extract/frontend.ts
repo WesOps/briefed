@@ -105,7 +105,8 @@ function extractPages(root: string, framework: string | null): PageRoute[] {
       ignore: ["pages/api/**", "pages/_*"],
     });
     for (const f of pagesDir) {
-      const path = "/" + f.replace(/^pages\//, "").replace(/\.\w+$/, "").replace(/\/index$/, "");
+      const normalized = f.replace(/\\/g, "/");
+      const path = "/" + normalized.replace(/^pages\//, "").replace(/\.\w+$/, "").replace(/\/index$/, "");
       pages.push({ path: path || "/", file: f, layout: null, isProtected: false });
     }
   }
@@ -248,7 +249,7 @@ export function formatFrontend(info: FrontendInfo): string {
   if (info.pages.length > 0) {
     lines.push("Pages:");
     for (const p of info.pages.slice(0, 20)) {
-      let line = `  ${p.path}`;
+      let line = `  ${p.path.replace(/\\/g, "/")}`;
       if (p.isProtected) line += " (auth)";
       lines.push(line);
     }

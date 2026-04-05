@@ -209,28 +209,44 @@ function parseTypeORM(content: string, source: string): SchemaModel[] {
 
 /**
  * Format schemas for skeleton inclusion.
+ * Compact format: Model(field:type, ...) → relations
  */
 export function formatSchemas(models: SchemaModel[]): string {
   if (models.length === 0) return "";
 
-  const lines: string[] = ["Database schema:"];
+  // Abbreviate common types
+  const shortType = (t: string): string => {
+    const map: Record<string, string> = {
+      String: "str", Int: "int", Float: "float", Boolean: "bool",
+      DateTime: "datetime", Json: "json", BigInt: "bigint", Decimal: "decimal",
+      Bytes: "bytes", CharField: "str", TextField: "text", IntegerField: "int",
+      BooleanField: "bool", DateTimeField: "datetime", AutoField: "id",
+    };
+    return map[t] || t.toLowerCase();
+  };
+
+  const lines: string[] = ["Schema:"];
   for (const m of models) {
-    const fieldList = m.fields
-      .map((f) => {
-        let s = `${f.name}: ${f.type}`;
-        if (f.isPk) s += " (pk)";
-        if (f.unique) s += " (unique)";
-        if (f.optional) s += "?";
-        if (f.default) s += ` = ${f.default}`;
-        return s;
-      })
-      .join(", ");
+    const fields = m.fields.map((f) => {
+      let s = `${f.name}`;
+      const parts: string[] = [shortType(f.type)];
+      if (f.isPk) parts.push("pk");
+      if (f.unique) parts.push("uniq");
+      s += `(${parts.join(",")})`;
+      if (f.optional) s += "?";
+      return s;
+    });
 
-    const relList = m.relations
-      .map((r) => `${r.field} → ${r.target} (${r.type})`)
-      .join(", ");
+    let line = `  ${m.name}: ${fields.join(", ")}`;
 
-    lines.push(`  ${m.name}: ${fieldList}${relList ? ` | ${relList}` : ""}`);
+    if (m.relations.length > 0) {
+      const rels = m.relations.map((r) =>
+        r.type === "one-to-many" ? `${r.field}→${r.target}[]` : `${r.field}→${r.target}`
+      );
+      line += `\n    → ${rels.join(", ")}`;
+    }
+
+    lines.push(line);
   }
   return lines.join("\n");
 }

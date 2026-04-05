@@ -25,6 +25,14 @@ import { extractEnvVars, formatEnvVars } from "../extract/env.js";
 import { extractScripts, formatScripts } from "../extract/scripts.js";
 import { extractFrontend, formatFrontend } from "../extract/frontend.js";
 import { extractInfra, formatInfra } from "../extract/infra.js";
+import { extractIntegrations, formatIntegrations } from "../extract/integrations.js";
+import { extractApiSchema, formatApiSchema } from "../extract/api-schema.js";
+import { extractJobs, formatJobs } from "../extract/jobs.js";
+import { extractMigrations, formatMigrations } from "../extract/migrations.js";
+import { extractDeprecations, formatDeprecations } from "../extract/deprecations.js";
+import { extractFeatureFlags, formatFeatureFlags } from "../extract/feature-flags.js";
+import { extractCaching, formatCaching } from "../extract/caching.js";
+import { extractAuth, formatAuth } from "../extract/auth.js";
 import { generateLearningHookScript } from "../learn/tracker.js";
 import { countTokens, formatTokens } from "../utils/tokens.js";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
@@ -234,6 +242,49 @@ export async function initCommand(opts: InitOptions) {
     console.log(`  Infra: ${infra.services.length} services, deployment: ${infra.deployment || "detected"}`);
   }
 
+  // External integrations — always useful
+  console.log("  Detecting integrations...");
+  const integrations = extractIntegrations(root);
+  if (integrations.length > 0) console.log(`  Found ${integrations.length} integrations (${integrations.map(i => i.name).join(", ")})`);
+
+  // OpenAPI / GraphQL schemas
+  console.log("  Checking API schemas...");
+  const apiSchemas = extractApiSchema(root);
+  if (apiSchemas.length > 0) console.log(`  Found ${apiSchemas.length} API schema files`);
+
+  // Background jobs
+  console.log("  Detecting background jobs...");
+  const jobs = extractJobs(root);
+  if (jobs.length > 0) console.log(`  Found ${jobs.length} background jobs`);
+
+  // Recent migrations — only if ORM detected
+  let migrations: ReturnType<typeof extractMigrations> = [];
+  if (hasORM) {
+    console.log("  Checking recent migrations...");
+    migrations = extractMigrations(root);
+    if (migrations.length > 0) console.log(`  Found ${migrations.length} recent migrations`);
+  }
+
+  // Deprecations
+  console.log("  Scanning deprecations...");
+  const deprecations = extractDeprecations(root);
+  if (deprecations.length > 0) console.log(`  Found ${deprecations.length} deprecated items`);
+
+  // Feature flags
+  console.log("  Detecting feature flags...");
+  const featureFlags = extractFeatureFlags(root);
+  if (featureFlags.length > 0) console.log(`  Found ${featureFlags.length} feature flags`);
+
+  // Caching patterns
+  console.log("  Detecting caching patterns...");
+  const cachingPatterns = extractCaching(root);
+  if (cachingPatterns.length > 0) console.log(`  Found ${cachingPatterns.length} caching patterns`);
+
+  // Auth model
+  console.log("  Detecting auth model...");
+  const authInfo = extractAuth(root);
+  if (authInfo) console.log(`  Auth: ${authInfo.provider} (${authInfo.strategy.join(", ")})`);
+
   // Step 8: Generate module index + contracts
   console.log("  Generating module index...");
   const moduleIndex = generateModuleIndex(extractions, depGraph, complexityScores, root);
@@ -270,6 +321,22 @@ export async function initCommand(opts: InitOptions) {
   if (frontendText) enrichedSkeleton += "\n" + frontendText;
   const infraText = formatInfra(infra);
   if (infraText) enrichedSkeleton += "\n" + infraText;
+  const authText = formatAuth(authInfo);
+  if (authText) enrichedSkeleton += "\n" + authText;
+  const integrationsText = formatIntegrations(integrations);
+  if (integrationsText) enrichedSkeleton += "\n" + integrationsText;
+  const apiSchemaText = formatApiSchema(apiSchemas);
+  if (apiSchemaText) enrichedSkeleton += "\n" + apiSchemaText;
+  const jobsText = formatJobs(jobs);
+  if (jobsText) enrichedSkeleton += "\n" + jobsText;
+  const migrationsText = formatMigrations(migrations);
+  if (migrationsText) enrichedSkeleton += "\n" + migrationsText;
+  const deprecationsText = formatDeprecations(deprecations);
+  if (deprecationsText) enrichedSkeleton += "\n" + deprecationsText;
+  const flagsText = formatFeatureFlags(featureFlags);
+  if (flagsText) enrichedSkeleton += "\n" + flagsText;
+  const cachingText = formatCaching(cachingPatterns);
+  if (cachingText) enrichedSkeleton += "\n" + cachingText;
 
   // Save test mappings to .briefed/ for hook use
   const briefedDir = join(root, ".briefed");
