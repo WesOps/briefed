@@ -11,11 +11,22 @@
     "dev": "tsc --watch",
     "start": "node dist/cli.js",
     "lint": "tsc --noEmit",
-    "bench": "node dist/cli.js bench"
+    "bench": "node dist/cli.js bench",
+    "prepublishOnly": "npm run build"
   },
-  "keywords": ["ai", "context", "claude", "cursor", "llm", "tree-sitter", "coding"],
+  "keywords": ["ai", "context", "claude", "cursor", "copilot", "llm", "codebase", "developer-tools"],
+  "author": "Wesley",
   "license": "MIT",
+  "homepage": "https://github.com/WesOps/briefed",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WesOps/briefed.git"
+  },
+  "bugs": {
+    "url": "https://github.com/WesOps/briefed/issues"
+  },
   "engines": { "node": ">=20" },
+  "files": ["dist", "README.md", "LICENSE"],
   "dependencies": {
     "commander": "^13.1.0",
     "web-tree-sitter": "^0.24.7",
