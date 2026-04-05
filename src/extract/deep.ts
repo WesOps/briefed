@@ -119,28 +119,19 @@ ${fileSections.join("\n---\n")}`;
 }
 
 async function runClaude(claudePath: string, prompt: string, cwd: string): Promise<string> {
-  const { writeFileSync, unlinkSync, mkdtempSync } = await import("fs");
-  const { tmpdir } = await import("os");
+  const { spawnSync } = await import("child_process");
 
-  const tmpDir = mkdtempSync(join(tmpdir(), "briefed-"));
-  const promptFile = join(tmpDir, "prompt.txt");
-  writeFileSync(promptFile, prompt);
+  const result = spawnSync(claudePath, ["-p", "-", "--output-format", "text"], {
+    input: prompt,
+    encoding: "utf-8",
+    timeout: 120_000,
+    cwd,
+    shell: true,
+  });
 
-  try {
-    return execSync(
-      `cat "${promptFile}" | ${claudePath} -p - --output-format text`,
-      {
-        encoding: "utf-8",
-        timeout: 120_000,
-        stdio: ["pipe", "pipe", "pipe"],
-        cwd,
-        shell: "/bin/sh",
-      }
-    ).trim();
-  } finally {
-    try { unlinkSync(promptFile); } catch {}
-    try { unlinkSync(tmpDir); } catch {}
-  }
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(result.stderr || `claude exited with ${result.status}`);
+  return (result.stdout || "").trim();
 }
 
 /**
@@ -329,13 +320,14 @@ function findClaudeCli(): string | null {
     `${process.env.HOME || ""}/.npm-global/bin/claude`,
     "/usr/local/bin/claude",
     "/opt/homebrew/bin/claude",
+    `${process.env.APPDATA || ""}/npm/claude.cmd`,
   ];
 
   for (const candidate of candidates) {
     try {
       execSync(`${candidate} --version`, {
         stdio: ["pipe", "pipe", "pipe"],
-        shell: "/bin/sh",
+        shell: process.platform === "win32" ? "cmd.exe" : "/bin/sh",
         timeout: 5000,
       });
       return candidate;
