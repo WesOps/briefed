@@ -120,6 +120,18 @@ export function installHooks(root: string) {
     ],
   });
 
+  // Add Stop hook — capture session memory (what files were touched, what modules mattered)
+  if (!settings.hooks.Stop) settings.hooks.Stop = [];
+  settings.hooks.Stop.push({
+    hooks: [
+      {
+        type: "command",
+        command: `node "${join(root, ".briefed", "hooks", "session-stop.js")}"`,
+        timeout: 5,
+      },
+    ],
+  });
+
   // Register MCP server for on-demand context queries
   if (!settings.mcpServers) settings.mcpServers = {};
   settings.mcpServers["briefed"] = {
@@ -137,10 +149,9 @@ export function generateHookScripts(root: string) {
   const hooksDir = join(root, ".briefed", "hooks");
   mkdirSync(hooksDir, { recursive: true });
 
-  // SessionStart hook — re-inject skeleton after compaction + auto-reindex if stale
+  // SessionStart hook — re-inject skeleton after compaction + memories + auto-reindex
   const sessionStartScript = `#!/usr/bin/env node
-// briefed: SessionStart hook — re-inject skeleton + auto-reindex if stale
-// Security: only reads from .briefed/ directory, spawns briefed init in background
+// briefed: SessionStart hook — re-inject skeleton + relevant session memories + auto-reindex
 const { readFileSync, realpathSync, existsSync, statSync, writeFileSync } = require("fs");
 const { join, resolve } = require("path");
 const { spawn } = require("child_process");
@@ -149,7 +160,7 @@ const briefedDir = resolve(join(__dirname, ".."));
 const root = resolve(join(briefedDir, ".."));
 const skeletonPath = join(briefedDir, "skeleton.md");
 
-// 1. Output skeleton (existing behavior)
+// 1. Output skeleton
 try {
   const realPath = realpathSync(skeletonPath);
   if (realPath.startsWith(realpathSync(briefedDir))) {
@@ -157,7 +168,32 @@ try {
   }
 } catch {}
 
-// 2. Staleness check — spawn background reindex if needed
+// 2. Inject relevant session memories (most recent, module-overlapping)
+try {
+  const memoryPath = join(briefedDir, "memory.json");
+  if (existsSync(memoryPath)) {
+    const memories = JSON.parse(readFileSync(memoryPath, "utf-8"));
+    if (Array.isArray(memories) && memories.length > 0) {
+      // Take the 5 most recent memories
+      const recent = memories.slice(-5);
+      const lines = ["\\n# Previous session context (from briefed memory)"];
+      for (const mem of recent) {
+        const age = Math.round((Date.now() - new Date(mem.timestamp).getTime()) / 3600000);
+        const ageStr = age < 24 ? age + "h ago" : Math.round(age / 24) + "d ago";
+        lines.push("- [" + ageStr + "] " + mem.summary);
+        if (mem.failures && mem.failures.length > 0) {
+          for (const f of mem.failures.slice(0, 2)) {
+            lines.push("  ⚠ " + f);
+          }
+        }
+      }
+      lines.push("");
+      process.stdout.write(lines.join("\\n"));
+    }
+  }
+} catch {}
+
+// 3. Staleness check — spawn background reindex if needed
 try {
   const indexPath = join(briefedDir, "index.json");
   if (!existsSync(indexPath)) process.exit(0);
@@ -446,11 +482,11 @@ process.stdin.on("end", () => {
 });
 `);
 
-  // PostToolUse hook — tracks file edits for learning loop (3x weight vs reads)
+  // PostToolUse hook — tracks file edits + injects test coverage for edited files
   writeFileSync(join(hooksDir, "post-edit.js"), `#!/usr/bin/env node
-// briefed: PostToolUse hook — tracks which files Claude edits (weighted 3x in learning)
-const { appendFileSync, mkdirSync, existsSync } = require("fs");
-const { join } = require("path");
+// briefed: PostToolUse hook — tracks edits (3x learning weight) + injects test info
+const { appendFileSync, mkdirSync, existsSync, readFileSync } = require("fs");
+const { join, relative } = require("path");
 
 let input = "";
 process.stdin.setEncoding("utf-8");
@@ -464,6 +500,127 @@ process.stdin.on("end", () => {
     const briefedDir = join(process.cwd(), ".briefed");
     if (!existsSync(briefedDir)) mkdirSync(briefedDir, { recursive: true });
     appendFileSync(join(briefedDir, "session-edits.log"), filePath + "\\n");
+
+    // Inject test info for the edited file so Claude knows what tests to check
+    const testMapPath = join(briefedDir, "test-map.json");
+    if (existsSync(testMapPath)) {
+      try {
+        const testMap = JSON.parse(readFileSync(testMapPath, "utf-8"));
+        const relPath = relative(process.cwd(), filePath).replace(/\\\\/g, "/");
+        const testInfo = testMap[relPath];
+        if (testInfo) {
+          const lines = [];
+          lines.push("⚡ Tests covering this file: " + testInfo.test + " (" + testInfo.count + " tests)");
+          if (testInfo.names && testInfo.names.length > 0) {
+            lines.push("  Key tests: " + testInfo.names.slice(0, 5).join(", "));
+          }
+          lines.push("  Run: npx vitest run " + testInfo.test);
+          process.stdout.write(lines.join("\\n") + "\\n");
+        }
+      } catch {}
+    }
+  } catch {}
+  process.exit(0);
+});
+`);
+
+  // Stop hook — capture session memory (what was done, which modules, what failed)
+  writeFileSync(join(hooksDir, "session-stop.js"), `#!/usr/bin/env node
+// briefed: Stop hook — captures session memory for future sessions
+const { readFileSync, writeFileSync, existsSync, mkdirSync } = require("fs");
+const { join } = require("path");
+
+let input = "";
+process.stdin.setEncoding("utf-8");
+process.stdin.on("data", (chunk) => { input += chunk; });
+process.stdin.on("end", () => {
+  try {
+    const briefedDir = join(process.cwd(), ".briefed");
+    if (!existsSync(briefedDir)) mkdirSync(briefedDir, { recursive: true });
+
+    const readsPath = join(briefedDir, "session-reads.log");
+    const editsPath = join(briefedDir, "session-edits.log");
+
+    // Collect what was read and edited this session
+    const reads = existsSync(readsPath) ? readFileSync(readsPath, "utf-8").trim().split("\\n").filter(Boolean) : [];
+    const edits = existsSync(editsPath) ? readFileSync(editsPath, "utf-8").trim().split("\\n").filter(Boolean) : [];
+
+    // Skip if nothing happened (trivial session)
+    if (reads.length === 0 && edits.length === 0) { process.exit(0); return; }
+
+    // Map files to modules using index.json
+    const indexPath = join(briefedDir, "index.json");
+    let modules = [];
+    if (existsSync(indexPath)) {
+      try {
+        const index = JSON.parse(readFileSync(indexPath, "utf-8"));
+        const touchedModules = new Set();
+        for (const file of [...new Set([...reads, ...edits])]) {
+          for (const mod of (index.modules || [])) {
+            if ((mod.files || []).some(f => file.includes(f))) {
+              touchedModules.add(mod.name || mod.dir);
+            }
+          }
+        }
+        modules = [...touchedModules];
+      } catch {}
+    }
+
+    // Deduplicate edits for summary
+    const uniqueEdits = [...new Set(edits)];
+    const uniqueReads = [...new Set(reads)];
+
+    // Build a concise summary
+    const parts = [];
+    if (uniqueEdits.length > 0) {
+      const short = uniqueEdits.slice(0, 5).map(f => f.split("/").pop());
+      parts.push("Edited " + uniqueEdits.length + " files: " + short.join(", ") + (uniqueEdits.length > 5 ? " +" + (uniqueEdits.length - 5) + " more" : ""));
+    }
+    if (modules.length > 0) {
+      parts.push("Modules: " + modules.join(", "));
+    }
+    if (uniqueReads.length > 0 && uniqueEdits.length === 0) {
+      parts.push("Read " + uniqueReads.length + " files (exploration only)");
+    }
+
+    const summary = parts.join(". ");
+    if (!summary) { process.exit(0); return; }
+
+    // Parse stop reason for failure detection
+    const data = JSON.parse(input || "{}");
+    const stopReason = data.stop_reason || "";
+    const failures = [];
+
+    // Detect if the session ended with an error pattern
+    if (stopReason.includes("error") || stopReason.includes("fail")) {
+      failures.push("Session ended with: " + stopReason.slice(0, 100));
+    }
+
+    // Load existing memories
+    const memoryPath = join(briefedDir, "memory.json");
+    let memories = [];
+    if (existsSync(memoryPath)) {
+      try { memories = JSON.parse(readFileSync(memoryPath, "utf-8")); } catch {}
+    }
+    if (!Array.isArray(memories)) memories = [];
+
+    // Add new memory
+    memories.push({
+      timestamp: new Date().toISOString(),
+      summary: summary,
+      modules: modules,
+      editedFiles: uniqueEdits.slice(0, 10),
+      failures: failures,
+    });
+
+    // Keep last 20 memories (trim old ones)
+    if (memories.length > 20) memories = memories.slice(-20);
+
+    writeFileSync(memoryPath, JSON.stringify(memories, null, 2));
+
+    // Clear session logs (fresh start for next session)
+    if (existsSync(readsPath)) writeFileSync(readsPath, "");
+    if (existsSync(editsPath)) writeFileSync(editsPath, "");
   } catch {}
   process.exit(0);
 });
