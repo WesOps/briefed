@@ -126,7 +126,6 @@ async function runClaude(claudePath: string, prompt: string, cwd: string): Promi
     encoding: "utf-8",
     timeout: 120_000,
     cwd,
-    shell: true,
   });
 
   if (result.error) throw result.error;

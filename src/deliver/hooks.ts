@@ -197,10 +197,39 @@ process.stdin.on("end", () => {
     if (!index.modules) { process.exit(0); return; }
     const complexity = scorePrompt(safePrompt);
 
+    // Learning loop: process session reads log into relevance scores
+    const learningPath = join(briefedDir, "learning.json");
+    const readsLogPath = join(briefedDir, "session-reads.log");
+    let learning = { moduleRelevance: {} };
+    try { learning = JSON.parse(safeRead(learningPath) || "{}"); } catch {}
+    if (!learning.moduleRelevance) learning.moduleRelevance = {};
+
+    // Process any pending file reads into learning scores
+    try {
+      if (existsSync(readsLogPath)) {
+        const reads = readFileSync(readsLogPath, "utf-8").trim().split("\\n").filter(Boolean);
+        if (reads.length > 0) {
+          // Map reads to modules, boost relevance for accessed modules
+          for (const readFile of reads) {
+            for (const mod of index.modules) {
+              if ((mod.files || []).some((f) => readFile.includes(f))) {
+                // Extract keywords from the module and boost them
+                for (const kw of (mod.keywords || []).slice(0, 5)) {
+                  if (!learning.moduleRelevance[kw]) learning.moduleRelevance[kw] = {};
+                  learning.moduleRelevance[kw][mod.name] = (learning.moduleRelevance[kw][mod.name] || 0) + 1;
+                }
+              }
+            }
+          }
+          // Clear the reads log (processed)
+          require("fs").writeFileSync(readsLogPath, "");
+          // Save updated learning
+          require("fs").writeFileSync(learningPath, JSON.stringify(learning, null, 2));
+        }
+      }
+    } catch {}
+
     // Adaptive budget based on prompt complexity
-    // Simple (1-3): 1500 chars (~400 tokens) — contracts only
-    // Moderate (4-6): 5000 chars (~1350 tokens) — contracts + deps
-    // Complex (7-10): 9000 chars (~2400 tokens) — contracts + deps + tests + history
     const budget = complexity <= 3 ? 1500 : complexity <= 6 ? 5000 : 9000;
     const includeDeps = complexity >= 4;
     const includeTests = complexity >= 7;
@@ -210,11 +239,22 @@ process.stdin.on("end", () => {
     const loaded = new Set();
     const output = [];
 
-    // Score each module by keyword hits
+    // Score each module by keyword hits + learned relevance
     const scored = index.modules.map((mod) => {
       const keywords = mod.keywords || [];
       const hits = keywords.filter((k) => safePrompt.includes(k.toLowerCase()));
-      return { mod, hits: hits.length, complexity: mod.complexity || 0 };
+
+      // Add learned relevance boost
+      let learnedBoost = 0;
+      for (const kw of safePrompt.split(/\\s+/)) {
+        if (kw.length < 3) continue;
+        const relevance = learning.moduleRelevance[kw];
+        if (relevance && relevance[mod.name]) {
+          learnedBoost += relevance[mod.name];
+        }
+      }
+
+      return { mod, hits: hits.length + learnedBoost, complexity: mod.complexity || 0 };
     })
     .filter((s) => s.hits > 0)
     .sort((a, b) => b.hits - a.hits || b.complexity - a.complexity);
