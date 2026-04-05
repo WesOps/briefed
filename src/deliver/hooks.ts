@@ -80,7 +80,7 @@ export function installHooks(root: string) {
     ],
   });
 
-  // Add PostToolUse hook — learning loop (tracks file reads)
+  // Add PostToolUse hooks — learning loop (tracks file reads and edits)
   if (!settings.hooks.PostToolUse) settings.hooks.PostToolUse = [];
   settings.hooks.PostToolUse.push({
     matcher: "Read",
@@ -88,6 +88,26 @@ export function installHooks(root: string) {
       {
         type: "command",
         command: `node "${join(root, ".briefed", "hooks", "post-read.js")}"`,
+        timeout: 2,
+      },
+    ],
+  });
+  settings.hooks.PostToolUse.push({
+    matcher: "Edit",
+    hooks: [
+      {
+        type: "command",
+        command: `node "${join(root, ".briefed", "hooks", "post-edit.js")}"`,
+        timeout: 2,
+      },
+    ],
+  });
+  settings.hooks.PostToolUse.push({
+    matcher: "Write",
+    hooks: [
+      {
+        type: "command",
+        command: `node "${join(root, ".briefed", "hooks", "post-edit.js")}"`,
         timeout: 2,
       },
     ],
@@ -103,21 +123,65 @@ export function generateHookScripts(root: string) {
   const hooksDir = join(root, ".briefed", "hooks");
   mkdirSync(hooksDir, { recursive: true });
 
-  // SessionStart hook — re-inject skeleton after compaction
+  // SessionStart hook — re-inject skeleton after compaction + auto-reindex if stale
   const sessionStartScript = `#!/usr/bin/env node
-// briefed: SessionStart hook — re-inject skeleton after compaction
-// Security: only reads from .briefed/ directory, never writes, never persists input
-const { readFileSync, realpathSync } = require("fs");
+// briefed: SessionStart hook — re-inject skeleton + auto-reindex if stale
+// Security: only reads from .briefed/ directory, spawns briefed init in background
+const { readFileSync, realpathSync, existsSync, statSync, writeFileSync } = require("fs");
 const { join, resolve } = require("path");
+const { spawn } = require("child_process");
 
 const briefedDir = resolve(join(__dirname, ".."));
+const root = resolve(join(briefedDir, ".."));
 const skeletonPath = join(briefedDir, "skeleton.md");
 
-// Verify the skeleton file is inside .briefed/ (prevent path traversal)
+// 1. Output skeleton (existing behavior)
 try {
   const realPath = realpathSync(skeletonPath);
-  if (!realPath.startsWith(realpathSync(briefedDir))) process.exit(0);
-  process.stdout.write(readFileSync(realPath, "utf-8"));
+  if (realPath.startsWith(realpathSync(briefedDir))) {
+    process.stdout.write(readFileSync(realPath, "utf-8"));
+  }
+} catch {}
+
+// 2. Staleness check — spawn background reindex if needed
+try {
+  const indexPath = join(briefedDir, "index.json");
+  if (!existsSync(indexPath)) process.exit(0);
+
+  const indexMtime = statSync(indexPath).mtime;
+  const { execSync } = require("child_process");
+  const changed = execSync(
+    'git status --porcelain -- "*.ts" "*.tsx" "*.js" "*.jsx" "*.py" "*.go" "*.rs" "*.java"',
+    { cwd: root, encoding: "utf-8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"] }
+  ).trim();
+
+  const changedFiles = changed ? changed.split("\\n").filter(Boolean) : [];
+  let staleCount = 0;
+  for (const line of changedFiles) {
+    const file = line.trim().slice(3);
+    const fullPath = join(root, file);
+    try { if (existsSync(fullPath) && statSync(fullPath).mtime > indexMtime) staleCount++; }
+    catch {}
+  }
+
+  const index = JSON.parse(readFileSync(indexPath, "utf-8"));
+  const totalFiles = (index.modules || []).reduce((sum, m) => sum + (m.files || []).length, 0);
+  const stalePct = totalFiles > 0 ? (staleCount / totalFiles) * 100 : 0;
+
+  if (stalePct > 10 || staleCount > 5) {
+    // Prevent concurrent reindex runs
+    const lockPath = join(briefedDir, ".reindex-lock");
+    if (existsSync(lockPath)) {
+      try {
+        if (Date.now() - statSync(lockPath).mtime.getTime() < 300000) process.exit(0);
+      } catch {}
+    }
+    writeFileSync(lockPath, Date.now().toString());
+    const child = spawn("npx", ["briefed", "init", "--repo", root], {
+      cwd: root, detached: true, stdio: "ignore",
+    });
+    child.unref();
+  }
 } catch {}
 `.trim();
 
@@ -199,49 +263,51 @@ process.stdin.on("end", () => {
     if (!index.modules) { process.exit(0); return; }
     const complexity = scorePrompt(safePrompt);
 
-    // Learning loop: process session reads log into relevance scores
+    // Learning loop: process session reads + edits into relevance scores
     const learningPath = join(briefedDir, "learning.json");
     const readsLogPath = join(briefedDir, "session-reads.log");
+    const editsLogPath = join(briefedDir, "session-edits.log");
     let learning = { moduleRelevance: {} };
     try { learning = JSON.parse(safeRead(learningPath) || "{}"); } catch {}
     if (!learning.moduleRelevance) learning.moduleRelevance = {};
 
-    // Process any pending file reads into learning scores
-    try {
-      if (existsSync(readsLogPath)) {
-        const reads = readFileSync(readsLogPath, "utf-8").trim().split("\\n").filter(Boolean);
-        if (reads.length > 0) {
-          // Map reads to modules, boost relevance for accessed modules
-          for (const readFile of reads) {
-            for (const mod of index.modules) {
-              if ((mod.files || []).some((f) => readFile.includes(f))) {
-                // Extract keywords from the module and boost them
-                for (const kw of (mod.keywords || []).slice(0, 5)) {
-                  if (!learning.moduleRelevance[kw]) learning.moduleRelevance[kw] = {};
-                  learning.moduleRelevance[kw][mod.name] = (learning.moduleRelevance[kw][mod.name] || 0) + 1;
-                }
+    // Process file reads (weight: 1) and edits (weight: 3) into learning scores
+    function processLog(logPath, weight) {
+      try {
+        if (!existsSync(logPath)) return;
+        const entries = readFileSync(logPath, "utf-8").trim().split("\\n").filter(Boolean);
+        if (entries.length === 0) return;
+        for (const filePath of entries) {
+          for (const mod of index.modules) {
+            if ((mod.files || []).some((f) => filePath.includes(f))) {
+              for (const kw of (mod.keywords || []).slice(0, 5)) {
+                if (!learning.moduleRelevance[kw]) learning.moduleRelevance[kw] = {};
+                learning.moduleRelevance[kw][mod.name] = (learning.moduleRelevance[kw][mod.name] || 0) + weight;
               }
             }
           }
-          // Clear the reads log (processed)
-          require("fs").writeFileSync(readsLogPath, "");
-          // Save updated learning
-          require("fs").writeFileSync(learningPath, JSON.stringify(learning, null, 2));
         }
-      }
-    } catch {}
+        require("fs").writeFileSync(logPath, "");
+      } catch {}
+    }
+    processLog(readsLogPath, 1);
+    processLog(editsLogPath, 3);
+    try { require("fs").writeFileSync(learningPath, JSON.stringify(learning, null, 2)); } catch {}
 
     // Adaptive budget based on prompt complexity
     const budget = complexity <= 3 ? 1500 : complexity <= 6 ? 5000 : 9000;
     const includeDeps = complexity >= 4;
     const includeTests = complexity >= 7;
-    const includeHistory = complexity >= 7;
+
+    // Load hot-file data (change frequency) for priority boosting
+    let hotFiles = {};
+    try { hotFiles = JSON.parse(safeRead(historyPath) || "{}"); } catch {}
 
     let used = 0;
     const loaded = new Set();
     const output = [];
 
-    // Score each module by keyword hits + learned relevance
+    // Score each module by keyword hits + learned relevance + hot-file boost
     const scored = index.modules.map((mod) => {
       const keywords = mod.keywords || [];
       const hits = keywords.filter((k) => safePrompt.includes(k.toLowerCase()));
@@ -256,12 +322,40 @@ process.stdin.on("end", () => {
         }
       }
 
-      return { mod, hits: hits.length + learnedBoost, complexity: mod.complexity || 0 };
+      // Hot-file boost: frequently-changed modules get priority (0.5x weight as tiebreaker)
+      let hotBoost = 0;
+      for (const file of (mod.files || [])) {
+        const freq = hotFiles[file];
+        if (typeof freq === "number") hotBoost += Math.min(freq, 10);
+      }
+
+      return { mod, hits: hits.length + learnedBoost + (hotBoost * 0.5), complexity: mod.complexity || 0 };
     })
     .filter((s) => s.hits > 0)
     .sort((a, b) => b.hits - a.hits || b.complexity - a.complexity);
 
-    // Load matching modules + their dependencies
+    // Helper: load related modules (dependencies or dependents) from a contract
+    function loadRelated(mod, label, field) {
+      const contractText = safeRead(join(contractsDir, mod.file));
+      if (!contractText) return;
+      const match = contractText.match(new RegExp(field + ":\\\\n([\\\\s\\\\S]*?)(?:\\\\n\\\\w|$)"));
+      if (!match) return;
+      const items = match[1].match(/- (.+)/g) || [];
+      for (const item of items) {
+        const name = item.replace("- ", "").trim();
+        const relMod = index.modules.find((m) => m.name === name);
+        if (relMod && !loaded.has(relMod.file) && used < budget) {
+          const contract = safeRead(join(contractsDir, relMod.file));
+          if (contract && used + contract.length <= budget) {
+            output.push("# " + label + ": " + relMod.dir + "\\n" + contract);
+            used += contract.length;
+            loaded.add(relMod.file);
+          }
+        }
+      }
+    }
+
+    // Load matching modules + their dependencies + dependents
     for (const { mod } of scored) {
       if (used >= budget) break;
 
@@ -278,31 +372,10 @@ process.stdin.on("end", () => {
         }
       }
 
-      // Load dependency modules (moderate+ complexity)
+      // Load dependency + dependent modules (moderate+ complexity)
       if (includeDeps) {
-        const contractPath2 = join(contractsDir, mod.file);
-        const contractText = safeRead(contractPath2);
-        if (contractText) {
-          const depMatch = contractText.match(/dependencies:\\n([\\s\\S]*?)(?:\\n\\w|$)/);
-          if (depMatch) {
-            const deps = depMatch[1].match(/- (.+)/g) || [];
-            for (const dep of deps) {
-              const depName = dep.replace("- ", "").trim();
-              const depMod = index.modules.find((m) => m.name === depName);
-              if (depMod && !loaded.has(depMod.file) && used < budget) {
-                const depPath = join(contractsDir, depMod.file);
-                const depContract = safeRead(depPath);
-                if (depContract) {
-                  if (used + depContract.length <= budget) {
-                    output.push("# Dependency: " + depMod.dir + "\\n" + depContract);
-                    used += depContract.length;
-                    loaded.add(depMod.file);
-                  }
-                }
-              }
-            }
-          }
-        }
+        loadRelated(mod, "Dependency", "dependencies");
+        loadRelated(mod, "Dependent", "dependents");
       }
 
       // Inject test info for matched modules (complex tasks only)
@@ -322,24 +395,6 @@ process.stdin.on("end", () => {
           }
         } catch {}
       }
-
-      // Inject history for matched modules (complex tasks only)
-      if (includeHistory && safeExists(historyPath) && used < budget) {
-        try {
-          const history = JSON.parse(safeRead(historyPath) || "{}");
-          for (const file of mod.files || []) {
-            const hist = history[file];
-            if (hist && hist.recent && hist.recent.length > 0 && used < budget) {
-              const histLine = "# History for " + file + " (" + hist.frequency + " recent commits):\\n" +
-                hist.recent.slice(0, 3).map((m) => "  - " + m).join("\\n");
-              if (used + histLine.length <= budget) {
-                output.push(histLine);
-                used += histLine.length;
-              }
-            }
-          }
-        } catch {}
-      }
     }
 
     if (output.length > 0) {
@@ -354,10 +409,9 @@ process.stdin.on("end", () => {
 
   writeFileSync(join(hooksDir, "prompt-submit.js"), promptSubmitScript);
 
-  // PostToolUse hook — learning loop (tracks file reads for future improvement)
+  // PostToolUse hook — tracks file reads for learning loop
   writeFileSync(join(hooksDir, "post-read.js"), `#!/usr/bin/env node
-// briefed: PostToolUse hook — tracks which files Claude reads for the learning loop
-// Security: only appends to .briefed/session-reads.log, never reads prompt content
+// briefed: PostToolUse hook — tracks which files Claude reads
 const { appendFileSync, mkdirSync, existsSync } = require("fs");
 const { join } = require("path");
 
@@ -373,6 +427,29 @@ process.stdin.on("end", () => {
     const briefedDir = join(process.cwd(), ".briefed");
     if (!existsSync(briefedDir)) mkdirSync(briefedDir, { recursive: true });
     appendFileSync(join(briefedDir, "session-reads.log"), filePath + "\\n");
+  } catch {}
+  process.exit(0);
+});
+`);
+
+  // PostToolUse hook — tracks file edits for learning loop (3x weight vs reads)
+  writeFileSync(join(hooksDir, "post-edit.js"), `#!/usr/bin/env node
+// briefed: PostToolUse hook — tracks which files Claude edits (weighted 3x in learning)
+const { appendFileSync, mkdirSync, existsSync } = require("fs");
+const { join } = require("path");
+
+let input = "";
+process.stdin.setEncoding("utf-8");
+process.stdin.on("data", (chunk) => { input += chunk; });
+process.stdin.on("end", () => {
+  try {
+    const data = JSON.parse(input);
+    if (data.tool_name !== "Edit" && data.tool_name !== "Write") { process.exit(0); return; }
+    const filePath = data.tool_input && data.tool_input.file_path;
+    if (!filePath) { process.exit(0); return; }
+    const briefedDir = join(process.cwd(), ".briefed");
+    if (!existsSync(briefedDir)) mkdirSync(briefedDir, { recursive: true });
+    appendFileSync(join(briefedDir, "session-edits.log"), filePath + "\\n");
   } catch {}
   process.exit(0);
 });

@@ -70,7 +70,8 @@ export function recordSession(
   promptKeywords: string[],
   injectedModules: string[],
   accessedFiles: string[],
-  moduleIndex: Array<{ name: string; dir: string; files: string[] }>
+  moduleIndex: Array<{ name: string; dir: string; files: string[] }>,
+  editedFiles: string[] = []
 ): LearningStore {
   // Map accessed files to modules
   const accessedModules = new Set<string>();
@@ -78,6 +79,16 @@ export function recordSession(
     for (const mod of moduleIndex) {
       if (mod.files.some((f) => file.includes(f) || f.includes(file))) {
         accessedModules.add(mod.name);
+      }
+    }
+  }
+
+  // Map edited files to modules (stronger signal)
+  const editedModules = new Set<string>();
+  for (const file of editedFiles) {
+    for (const mod of moduleIndex) {
+      if (mod.files.some((f) => file.includes(f) || f.includes(file))) {
+        editedModules.add(mod.name);
       }
     }
   }
@@ -96,19 +107,24 @@ export function recordSession(
   });
 
   // Update relevance scores
-  // For each keyword in the prompt, increase the score for modules that were accessed
   for (const keyword of promptKeywords) {
     if (!store.moduleRelevance[keyword]) {
       store.moduleRelevance[keyword] = {};
     }
+    // Read-accessed modules: weight 1
     for (const mod of accessedModules) {
       const current = store.moduleRelevance[keyword][mod] || 0;
       store.moduleRelevance[keyword][mod] = current + 1;
     }
-    // Slight boost for misses (we should have injected these)
+    // Edit-accessed modules: weight 3 (stronger signal than reads)
+    for (const mod of editedModules) {
+      const current = store.moduleRelevance[keyword][mod] || 0;
+      store.moduleRelevance[keyword][mod] = current + 3;
+    }
+    // Misses: weight 2 (we should have injected these)
     for (const miss of misses) {
       const current = store.moduleRelevance[keyword][miss] || 0;
-      store.moduleRelevance[keyword][miss] = current + 2; // double weight for misses
+      store.moduleRelevance[keyword][miss] = current + 2;
     }
   }
 

@@ -53,14 +53,13 @@ export function writeOutputs(
     )
   );
 
-  // Save histories to .briefed/ for hook use
+  // Save histories to .briefed/ for hook use (frequency only — used as priority boost)
   if (result.histories.size > 0) {
-    const histObj: Record<string, unknown> = {};
+    const histObj: Record<string, number> = {};
     for (const [file, hist] of result.histories) {
-      histObj[file] = {
-        frequency: hist.changeFrequency,
-        recent: hist.recentCommits.slice(0, 3).map((c) => c.message),
-      };
+      if (hist.changeFrequency > 0) {
+        histObj[file] = hist.changeFrequency;
+      }
     }
     writeFileSync(join(briefedDir, "history.json"), JSON.stringify(histObj, null, 2));
   }
