@@ -2,6 +2,12 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { debug } from "../utils/log.js";
 
+interface McpServer {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
 interface ClaudeSettings {
   hooks?: Record<string, Array<{
     matcher?: string;
@@ -11,6 +17,7 @@ interface ClaudeSettings {
       timeout?: number;
     }>;
   }>>;
+  mcpServers?: Record<string, McpServer>;
   [key: string]: unknown;
 }
 
@@ -112,6 +119,13 @@ export function installHooks(root: string) {
       },
     ],
   });
+
+  // Register MCP server for on-demand context queries
+  if (!settings.mcpServers) settings.mcpServers = {};
+  settings.mcpServers["briefed"] = {
+    command: "node",
+    args: [join(root, "dist", "cli.js"), "mcp", "--repo", root],
+  };
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 }

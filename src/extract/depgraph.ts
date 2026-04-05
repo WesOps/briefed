@@ -74,6 +74,16 @@ function resolveImport(
   // Try exact match first
   if (fileSet.has(basePath)) return basePath;
 
+  // ESM: strip .js/.mjs extension before trying .ts (TypeScript ESM uses .js in imports)
+  const esmMap: Record<string, string[]> = { ".js": [".ts", ".tsx"], ".mjs": [".mts"], ".jsx": [".tsx"] };
+  const ext = basePath.match(/\.\w+$/)?.[0] || "";
+  if (esmMap[ext]) {
+    const stem = basePath.slice(0, -ext.length);
+    for (const tsExt of esmMap[ext]) {
+      if (fileSet.has(stem + tsExt)) return stem + tsExt;
+    }
+  }
+
   // Try with extensions
   const extensions = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".py", ".go", ".rs"];
   for (const ext of extensions) {
