@@ -5,7 +5,6 @@ paths:
 
 # Constraints: src/extract/
 
-- TODO: remove / TODO: delete patterns
 - TODO: This rate limiter must be checked before processing any payment requests\nconst x = 1;\n`
 - HACK: This workaround is needed because the API returns stale cache entries",
 - FIXME: Race condition occurs when two users submit simultaneously in production",
@@ -18,7 +17,6 @@ paths:
 - Status values: Active, Inactive, Deleted
 - Status transitions: pending → processing → completed
 - OrderStatus values: Pending, Active, Cancelled
-- Emits event: EVENT_NAME
 - Emits event: OrderCreated
 - Uses soft deletes — queries must filter deleted records
 - Enforces uniqueness — throws on duplicate
