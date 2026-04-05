@@ -114,10 +114,16 @@ export function extractCaching(root: string): CachePattern[] {
 export function formatCaching(patterns: CachePattern[]): string {
   if (patterns.length === 0) return "";
 
-  const lines: string[] = ["Caching:"];
-  for (const p of patterns.slice(0, 10)) {
-    lines.push(`  ${p.type}: ${p.strategy} (${p.detail}) — ${p.file}`);
+  // Deduplicate by type+strategy, keep only distinct patterns
+  const seen = new Map<string, CachePattern>();
+  for (const p of patterns) {
+    const key = `${p.type}:${p.strategy}`;
+    if (!seen.has(key)) seen.set(key, p);
   }
-  if (patterns.length > 10) lines.push(`  ... +${patterns.length - 10} more`);
-  return lines.join("\n");
+
+  const unique = [...seen.values()];
+  if (unique.length === 0) return "";
+
+  const parts = unique.slice(0, 5).map(p => `${p.type}/${p.strategy}(${p.detail})`);
+  return `Caching: ${parts.join(", ")}`;
 }

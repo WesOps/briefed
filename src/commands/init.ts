@@ -33,6 +33,7 @@ import { extractDeprecations, formatDeprecations } from "../extract/deprecations
 import { extractFeatureFlags, formatFeatureFlags } from "../extract/feature-flags.js";
 import { extractCaching, formatCaching } from "../extract/caching.js";
 import { extractAuth, formatAuth } from "../extract/auth.js";
+import { extractEvents, formatEvents } from "../extract/events.js";
 import { generateLearningHookScript } from "../learn/tracker.js";
 import { countTokens, formatTokens } from "../utils/tokens.js";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
@@ -285,6 +286,11 @@ export async function initCommand(opts: InitOptions) {
   const authInfo = extractAuth(root);
   if (authInfo) console.log(`  Auth: ${authInfo.provider} (${authInfo.strategy.join(", ")})`);
 
+  // Event/webhook contracts
+  console.log("  Detecting events/webhooks...");
+  const events = extractEvents(root);
+  if (events.length > 0) console.log(`  Found ${events.length} event contracts`);
+
   // Step 8: Generate module index + contracts
   console.log("  Generating module index...");
   const moduleIndex = generateModuleIndex(extractions, depGraph, complexityScores, root);
@@ -331,6 +337,8 @@ export async function initCommand(opts: InitOptions) {
   if (flagsText) enrichedSkeleton += "\n" + flagsText;
   const cachingText = formatCaching(cachingPatterns);
   if (cachingText) enrichedSkeleton += "\n" + cachingText;
+  const eventsText = formatEvents(events);
+  if (eventsText) enrichedSkeleton += "\n" + eventsText;
 
   // Save test mappings to .briefed/ for hook use
   const briefedDir = join(root, ".briefed");

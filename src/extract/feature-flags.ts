@@ -25,7 +25,7 @@ export function extractFeatureFlags(root: string): FeatureFlag[] {
 
   const sourceFiles = glob.sync("**/*.{ts,tsx,js,jsx}", {
     cwd: root,
-    ignore: ["node_modules/**", "dist/**", "test/**", "*.test.*", "*.spec.*"],
+    ignore: ["node_modules/**", "dist/**", "test/**", "tests/**", "**/*test*/**", "**/*spec*/**", "*.test.*", "*.spec.*", "e2e/**", "**/*.spec.ts", "**/*.test.ts"],
   });
 
   for (const f of sourceFiles) {
@@ -47,15 +47,15 @@ export function extractFeatureFlags(root: string): FeatureFlag[] {
       flags.set(m[1], { name: m[1], file: f, provider: "growthbook" });
     }
 
-    // Custom flag patterns: FEATURE_*, ENABLE_*, FF_*
-    for (const m of content.matchAll(/(?:process\.env\.)?((?:FEATURE|ENABLE|FF|FLAG)_\w+)/g)) {
+    // Custom flag patterns: FEATURE_*, ENABLE_*, FF_* (only from env references)
+    for (const m of content.matchAll(/process\.env\.((?:FEATURE|ENABLE|FF|FLAG)_\w+)/g)) {
       if (!flags.has(m[1])) {
         flags.set(m[1], { name: m[1], file: f, provider: "env" });
       }
     }
 
-    // Custom: featureFlags.isEnabled('name') or features['name']
-    for (const m of content.matchAll(/(?:featureFlags?|features?)\s*[\.\[]\s*(?:isEnabled\s*\(\s*)?['"]([^'"]+)['"]/g)) {
+    // Custom: featureFlags.isEnabled('name')
+    for (const m of content.matchAll(/featureFlags?\s*\.\s*(?:isEnabled|isOn|get|check)\s*\(\s*['"]([^'"]+)['"]/g)) {
       if (!flags.has(m[1])) {
         flags.set(m[1], { name: m[1], file: f, provider: provider || "custom" });
       }

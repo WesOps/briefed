@@ -141,12 +141,26 @@ export function formatEnvVars(vars: EnvVar[]): string {
   const critical = vars.filter(v => v.required && !v.hasDefault);
   if (critical.length === 0) return "";
 
+  // If few vars, single line. If many, multi-line by category.
   const byCategory = new Map<string, string[]>();
   for (const v of critical) {
     if (!byCategory.has(v.category)) byCategory.set(v.category, []);
     byCategory.get(v.category)!.push(v.name);
   }
 
-  const parts = [...byCategory].map(([cat, names]) => `${cat}: ${names.join(", ")}`);
-  return `Required env: ${parts.join(" | ")}`;
+  if (critical.length <= 10) {
+    const parts = [...byCategory].map(([cat, names]) => `${cat}: ${names.join(", ")}`);
+    return `Required env: ${parts.join(" | ")}`;
+  }
+
+  // Many vars — multi-line, show count per category with key examples
+  const lines: string[] = [`Required env (${critical.length} vars):`];
+  for (const [cat, names] of byCategory) {
+    if (names.length <= 5) {
+      lines.push(`  ${cat}: ${names.join(", ")}`);
+    } else {
+      lines.push(`  ${cat}: ${names.slice(0, 3).join(", ")} +${names.length - 3} more`);
+    }
+  }
+  return lines.join("\n");
 }
