@@ -186,13 +186,13 @@ process.stdin.on("end", () => {
     const data = JSON.parse(input);
     const prompt = (data.prompt || data.message || "").toLowerCase();
 
-    if (!prompt || !safeExists(indexPath)) {
+    // Security: truncate FIRST to prevent ReDoS on long inputs
+    const safePrompt = (prompt || "").slice(0, 2000);
+    if (!safePrompt || !safeExists(indexPath)) {
       process.exit(0);
       return;
     }
 
-    // Security: truncate prompt analysis to prevent ReDoS on long inputs
-    const safePrompt = prompt.slice(0, 2000);
     const index = JSON.parse(safeRead(indexPath) || "{}");
     if (!index.modules) { process.exit(0); return; }
     const complexity = scorePrompt(safePrompt);

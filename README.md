@@ -75,25 +75,35 @@ npx briefed doctor
 
 ## What gets mapped
 
-briefed extracts context across every domain relevant to your project:
+briefed extracts context across every domain relevant to your project (only relevant extractors run):
 
 - **Code structure** — function signatures, exports, dependency graph, PageRank-ranked by importance
+- **Behavioral descriptions** — Claude-generated one-liners for what each function does (via `--deep`, default)
+- **System overview** — how modules connect, data flow, architecture patterns (via `--deep`, default)
 - **Schemas** — Prisma, Drizzle, Django, TypeORM models and relations
 - **API routes** — Express, Fastify, Next.js, FastAPI, Django, Hono endpoints
-- **Frontend** — pages, components, state stores (Zustand, Redux, Context)
+- **OpenAPI / GraphQL** — parsed schema files with endpoints and types
+- **Auth model** — provider, OAuth strategies, roles, session store, middleware
+- **Integrations** — 50+ known services (Stripe, SendGrid, Sentry, Cloudinary, etc.)
+- **Background jobs** — BullMQ, Inngest, Celery, node-cron, Trigger.dev workers
+- **Events / webhooks** — event contracts, webhook triggers, pub/sub topics
+- **Feature flags** — LaunchDarkly, Unleash, GrowthBook, env-based flags
+- **Caching** — Redis, Next.js ISR, HTTP headers, LRU, Django cache
+- **Migrations** — last 5 schema changes with summaries
+- **Deprecations** — @deprecated tags, TODO:remove markers
 - **Infrastructure** — Docker Compose, Terraform, Kubernetes, deployment platform
-- **Environment** — required env vars with descriptions
+- **Environment** — required env vars grouped by category
+- **Frontend** — page routes (with auth guards), state stores
 - **Tests** — source → test file mappings
-- **Git history** — churn data, recent changes per file
-- **Conventions** — naming patterns, error handling style, code patterns
+- **Conventions** — naming patterns, error handling style, import patterns
 - **Gotchas** — important comments, guard clauses, state machine transitions
-
-Only domains relevant to your project are included — a pure API project won't get frontend context.
+- **Git history** — churn data for complex files
 
 ## Commands
 
 ```bash
-briefed init              # scan and compile context
+briefed init              # scan + deep analysis (default, uses Claude CLI)
+briefed init --fast       # static-only, no Claude calls, instant
 briefed init --skip-hooks # init without installing hooks
 briefed init --skip-rules # init without writing .claude/rules/
 briefed stats             # show token usage breakdown

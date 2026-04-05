@@ -13,7 +13,7 @@ program
   .description(
     "Adaptive Context Engine — compile your codebase into focused, token-efficient context for AI coding tools"
   )
-  .version("0.1.0");
+  .version("0.3.0");
 
 program
   .command("init")

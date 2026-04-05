@@ -35,7 +35,7 @@ import { extractCaching, formatCaching } from "../extract/caching.js";
 import { extractAuth, formatAuth } from "../extract/auth.js";
 import { extractEvents, formatEvents } from "../extract/events.js";
 import { deepAnnotate, mergeAnnotations, generateDeepRules, generateSystemOverview } from "../extract/deep.js";
-import { generateLearningHookScript } from "../learn/tracker.js";
+
 import { countTokens, formatTokens } from "../utils/tokens.js";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
@@ -197,11 +197,11 @@ export async function initCommand(opts: InitOptions) {
 
   // Domain-specific extractors — only run what's relevant to this project
   const hasBackend = stack.frameworks.some((f) =>
-    ["express", "fastify", "hono", "nestjs", "django", "fastapi", "flask", "gin", "echo", "fiber"].includes(f)
-  ) || stack.languages.some((l) => ["go", "rust", "java", "python"].includes(l));
+    ["express", "fastify", "hono", "nestjs", "django", "fastapi", "flask", "gin", "echo", "fiber"].includes(f.toLowerCase())
+  ) || stack.languages.some((l) => ["go", "rust", "java", "python"].includes(l.toLowerCase()));
 
   const hasFrontend = stack.frameworks.some((f) =>
-    ["react", "next.js", "vue", "nuxt", "svelte", "astro", "remix", "angular"].includes(f)
+    ["react", "next.js", "vue", "nuxt", "svelte", "astro", "remix", "angular"].includes(f.toLowerCase())
   );
 
   const hasORM = !!stack.dbORM;

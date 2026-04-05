@@ -164,7 +164,8 @@ function formatSignature(sym: Symbol): string {
   }
   // Append description if available (one-liner from docstring/JSDoc)
   if (sym.description) {
-    return `${base} — ${sym.description}`;
+    const desc = sym.description.length > 80 ? sym.description.slice(0, 77) + "..." : sym.description;
+    return `${base} — ${desc}`;
   }
   return base;
 }
