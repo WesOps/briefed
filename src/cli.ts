@@ -2,6 +2,7 @@
 
 import { Command } from "commander";
 import { initCommand } from "./commands/init.js";
+import { planCommand } from "./commands/plan.js";
 import { statsCommand } from "./commands/stats.js";
 import { benchCommand } from "./commands/bench.js";
 import { doctorCommand } from "./commands/doctor.js";
@@ -27,6 +28,12 @@ program
   .option("--skip-rules", "Skip .claude/rules/ generation")
   .option("--fast", "Skip Claude-powered deep analysis (static-only, instant)")
   .action(initCommand);
+
+program
+  .command("plan")
+  .description("Preview what briefed will generate — file counts, token estimates, features — without writing anything")
+  .option("--repo <path>", "Repository root path", ".")
+  .action(planCommand);
 
 program
   .command("stats")
