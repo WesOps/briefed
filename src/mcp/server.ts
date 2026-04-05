@@ -5,6 +5,7 @@ import { resolve } from "path";
 import { blastRadius } from "./blast-radius.js";
 import { schemaLookup } from "./schema-lookup.js";
 import { routeDetail } from "./route-detail.js";
+import { symbolLookup } from "./symbol-lookup.js";
 
 export async function startMcpServer(repoPath: string) {
   const root = resolve(repoPath);
@@ -36,6 +37,13 @@ export async function startMcpServer(repoPath: string) {
       path: z.string().optional().describe("Path pattern to match (e.g. /api/users, /auth)"),
     },
     async ({ method, path }) => routeDetail(root, method, path),
+  );
+
+  server.tool(
+    "briefed_symbol",
+    "Look up a function, class, type, or interface by name. Shows signature, description, which files import it, dependencies, test coverage, and importance ranking.",
+    { name: z.string().describe("Symbol name to look up (e.g. extractFile, DepGraph, buildDepGraph)") },
+    async ({ name }) => symbolLookup(root, name),
   );
 
   const transport = new StdioServerTransport();

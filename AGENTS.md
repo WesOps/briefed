@@ -1,52 +1,52 @@
 <!-- briefed:agents:start -->
 # briefed: typescript, javascript project
 Stack: typescript, javascript
-Files: 71 source files across 7 directories
+Files: 72 source files across 7 directories
 
 ## src/extract/ (41 files)
-signatures.ts ★13
-  interface Symbol — Extracted symbol from a source file.
+signatures.ts ★14
+  interface Symbol — Extracted symbol from a source file. [3 callers]
   type SymbolKind = | "function"
   | "class"
   | "interface"
   | "type"
   | "enu...
   interface ImportRef — Import reference found in a file.
-  interface FileExtraction — Import reference found in a file.
-  extractFile(filePath: string, _rootPath: string): FileExtraction — Extract symbols and imports from a source file.
+  interface FileExtraction — Import reference found in a file. [11 callers]
+  extractFile(filePath: string, _rootPath: string): FileExtraction — Extract symbols and imports from a source file. [4 callers]
 ast.ts ★2: extractWithAst — AST-based extraction for TypeScript/JavaScript files using the TS compiler API.
-depgraph.ts ★8
-  interface DepGraph
-  buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions.
+depgraph.ts ★9
+  interface DepGraph [6 callers]
+  buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions. [4 callers]
 gotchas.ts ★3
-  interface Gotcha
+  interface Gotcha [2 callers]
   type GotchaCategory = | "important_comment"   // TODO/HACK/NOTE/WARNING/FIXME with...
-  extractGotchas(filePath: string): Gotcha[] — Extract gotchas from a source file.
+  extractGotchas(filePath: string): Gotcha[] — Extract gotchas from a source file. [2 callers]
+scanner.ts ★5
+  interface DiscoveredFile
+  interface ScanResult
+  scanFiles(root: string): ScanResult — Discover all parseable source files in a project. [4 callers]
 routes.ts ★4
   interface Route
-  extractRoutes(root: string): Route[] — Extract API routes from the codebase.
+  extractRoutes(root: string): Route[] — Extract API routes from the codebase. [3 callers]
   formatRoutes(routes: Route[]): string — Format routes for skeleton inclusion.
 schema.ts ★4
   interface SchemaModel
   interface SchemaField
   interface SchemaRelation
-  extractSchemas(root: string): SchemaModel[] — Extract database schema from ORM definition files.
+  extractSchemas(root: string): SchemaModel[] — Extract database schema from ORM definition files. [3 callers]
   formatSchemas(models: SchemaModel[]): string — Format schemas for skeleton inclusion.
-scanner.ts ★4
-  interface DiscoveredFile
-  interface ScanResult
-  scanFiles(root: string): ScanResult — Discover all parseable source files in a project.
 complexity.ts ★5
-  interface ComplexityScore
-  computeComplexity(extraction: FileExtraction, depGraph: DepGraph): ComplexityScore — Compute complexity score for a file.
+  interface ComplexityScore [4 callers]
+  computeComplexity(extraction: FileExtraction, depGraph: DepGraph): ComplexityScore — Compute complexity score for a file. [2 callers]
 env.ts ★3
   interface EnvVar
-  extractEnvVars(root: string): EnvVar[] — Extract environment variables the project expects.
-  formatEnvVars(vars: EnvVar[]): string — Format env vars for skeleton inclusion.
+  extractEnvVars(root: string): EnvVar[] — Extract environment variables the project expects. [2 callers]
+  formatEnvVars(vars: EnvVar[]): string — Format env vars for skeleton inclusion. [2 callers]
 scripts.ts ★3
   interface ProjectScripts
-  extractScripts(root: string): ProjectScripts — Extract build/test/dev commands from package.json, Makefile, etc.
-  formatScripts(scripts: ProjectScripts): string — Format scripts for skeleton inclusion.
+  extractScripts(root: string): ProjectScripts — Extract build/test/dev commands from package.json, Makefile, etc. [2 callers]
+  formatScripts(scripts: ProjectScripts): string — Format scripts for skeleton inclusion. [2 callers]
 monorepo.ts ★2: WorkspaceInfo, WorkspacePackage, detectMonorepo — Detect if we're in a monorepo and identify packages.
 security.ts ★2: SecurityWarning, SecurityIssueType, isSensitiveFile — Check if a file should be excluded from context output for security reasons., scanForSecrets — Scan a file for sensitive data patterns., redactSecrets — Redact sensitive values from text before including in context.
 staleness.ts ★1: StalenessReport, checkStaleness — Check if the briefed context is stale (source files changed since last index)., formatStaleness — Format staleness report for display.
@@ -80,29 +80,26 @@ jobs.ts: BackgroundJob, extractJobs, formatJobs
 migrations.ts: Migration, extractMigrations, formatMigrations
 
 ## src/utils/ (7 files)
-log.ts ★9
-  debug(msg: string): void — Lightweight logging utilities.
+log.ts ★10
+  debug(msg: string): void — Lightweight logging utilities. [10 callers]
   warn(msg: string): void
 tokens.ts ★5
-  countTokens(text: string): number — Estimate token count for a string
-  formatTokens(count: number): string — Format token count for display
+  countTokens(text: string): number — Estimate token count for a string [5 callers]
+  formatTokens(count: number): string — Format token count for display [3 callers]
   formatBytes(bytes: number): string — Format byte count for display
 pagerank.ts ★2: GraphNode — Simple PageRank implementation for dependency graph ranking., computePageRank — Compute PageRank scores for a file dependency graph., computeRefCounts — Get reference count (in-degree) for each node.
 detect.ts ★5
-  interface StackInfo
-  detectStack(root: string): StackInfo — Detect the project's tech stack from config files
+  interface StackInfo [2 callers]
+  detectStack(root: string): StackInfo — Detect the project's tech stack from config files [2 callers]
   extToLanguage(ext: string): string | null — Map file extension to language name
-  PARSEABLE_EXTENSIONS — File extensions we should parse
-  SKIP_DIRS — Directories to always skip
+  PARSEABLE_EXTENSIONS — File extensions we should parse [2 callers]
+  SKIP_DIRS — Directories to always skip [2 callers]
 pagerank.test.ts: 
 
-## src/deliver/ (7 files)
-git-hook.ts ★3
-  installGitHook(root: string) — Install a git post-commit hook that auto-updates briefed context.
-  removeGitHook(root: string) — Remove briefed's git hook.
-claudemd.ts ★1: updateClaudeMd — Append or update the briefed skeleton section in CLAUDE.md., saveSkeletonFile — Save the skeleton as a standalone file in .briefed/ for hook re-injection.
+## src/mcp/ (6 files)
+blast-radius.ts ★2: blastRadius — BFS over the dependency graph to find all files transitively affected
 
-<!-- briefed skeleton: 41 files, ~1872 tokens -->
+<!-- briefed skeleton: 40 files, ~1874 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
 Tests: 15 source files have matching test files
 Error handling:

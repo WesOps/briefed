@@ -20,6 +20,7 @@ function makeDepGraph(
     nodes,
     pageRank: new Map(),
     refCounts: new Map(),
+    symbolRefs: new Map(),
   };
 }
 

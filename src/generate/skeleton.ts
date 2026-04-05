@@ -113,7 +113,9 @@ export function generateSkeleton(
         tokenCount += countTokens(fileLine);
 
         for (const sym of exportedSymbols.slice(0, 10)) {
-          const sigLine = `  ${formatSignature(sym)}`;
+          const symCallers = depGraph.symbolRefs.get(`${extraction.path}#${sym.name}`)?.length || 0;
+          const callerTag = symCallers > 1 ? ` [${symCallers} callers]` : "";
+          const sigLine = `  ${formatSignature(sym)}${callerTag}`;
           const sigTokens = countTokens(sigLine);
           if (tokenCount + sigTokens > options.maxTokens) break;
           lines.push(sigLine);

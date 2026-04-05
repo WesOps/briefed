@@ -6,6 +6,8 @@ export interface DepGraph {
   nodes: Map<string, GraphNode>;
   pageRank: Map<string, number>;
   refCounts: Map<string, number>;
+  /** Symbol cross-references: "file#symbolName" → list of files that import it */
+  symbolRefs: Map<string, string[]>;
 }
 
 /**
@@ -28,6 +30,9 @@ export function buildDepGraph(
     });
   }
 
+  // Symbol cross-reference map: "file#symbolName" → importing files
+  const symbolRefs = new Map<string, string[]>();
+
   // Resolve imports and build edges
   for (const ext of extractions) {
     const node = nodes.get(ext.path)!;
@@ -44,6 +49,17 @@ export function buildDepGraph(
         if (!targetNode.inEdges.includes(ext.path)) {
           targetNode.inEdges.push(ext.path);
         }
+
+        // Track symbol-level cross-references
+        for (const name of imp.names) {
+          const key = `${resolved}#${name}`;
+          const refs = symbolRefs.get(key);
+          if (refs) {
+            if (!refs.includes(ext.path)) refs.push(ext.path);
+          } else {
+            symbolRefs.set(key, [ext.path]);
+          }
+        }
       }
     }
   }
@@ -52,7 +68,7 @@ export function buildDepGraph(
   const pageRank = computePageRank(nodes);
   const refCounts = computeRefCounts(nodes);
 
-  return { nodes, pageRank, refCounts };
+  return { nodes, pageRank, refCounts, symbolRefs };
 }
 
 /**

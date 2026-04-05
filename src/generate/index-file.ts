@@ -176,14 +176,13 @@ export function generateSimpleContracts(
       complexity: mod.complexity,
     };
 
-    // Enriched exports: signature + description + caller count
+    // Enriched exports: signature + description + symbol-level caller count
     if (exports.length > 0) {
       contract.exports = exports.slice(0, 15).map((s) => {
-        // Count callers from depGraph inEdges for the file containing this symbol
-        const fileNode = depGraph.nodes.get(
-          modExtractions.find((e) => e.symbols.includes(s))?.path || ""
-        );
-        const callerCount = fileNode ? fileNode.inEdges.length : 0;
+        // Symbol-level cross-refs: how many files import this specific symbol
+        const filePath = modExtractions.find((e) => e.symbols.includes(s))?.path || "";
+        const symRefs = depGraph.symbolRefs.get(`${filePath}#${s.name}`);
+        const callerCount = symRefs ? symRefs.length : 0;
 
         let entry = s.signature;
         if (s.description) entry += ` — ${s.description}`;
