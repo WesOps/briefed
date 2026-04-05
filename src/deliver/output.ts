@@ -2,7 +2,7 @@ import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 import { updateClaudeMd, saveSkeletonFile } from "./claudemd.js";
 import { installHooks, generateHookScripts } from "./hooks.js";
-import { writeCursorRules, writeAgentsMd } from "./cross-tool.js";
+import { writeCursorRules, writeAgentsMd, writeCopilotInstructions, writeCodexMd } from "./cross-tool.js";
 import { installGitHook } from "./git-hook.js";
 import { generateRuleFiles } from "../generate/rules.js";
 import type { ExtractionResult } from "../extract/pipeline.js";
@@ -96,6 +96,8 @@ export function writeOutputs(
   console.log("  Writing cross-tool context...");
   writeCursorRules(root, enrichedSkeleton, convText);
   writeAgentsMd(root, enrichedSkeleton, convText);
+  writeCopilotInstructions(root, enrichedSkeleton, convText);
+  writeCodexMd(root, enrichedSkeleton, convText);
 
   // Git hook for auto-updates
   summary.gitHookInstalled = installGitHook(root);
