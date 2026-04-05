@@ -2,7 +2,7 @@
 <!-- briefed:start -->
 # briefed: typescript, javascript project
 Stack: typescript, javascript
-Files: 72 source files across 7 directories
+Files: 73 source files across 7 directories
 
 ## src/extract/ (41 files)
 signatures.ts ★14
@@ -23,10 +23,10 @@ gotchas.ts ★3
   interface Gotcha [2 callers]
   type GotchaCategory = | "important_comment"   // TODO/HACK/NOTE/WARNING/FIXME with...
   extractGotchas(filePath: string): Gotcha[] — Extract gotchas from a source file. [2 callers]
-scanner.ts ★5
+scanner.ts ★6
   interface DiscoveredFile
   interface ScanResult
-  scanFiles(root: string): ScanResult — Discover all parseable source files in a project. [4 callers]
+  scanFiles(root: string): ScanResult — Discover all parseable source files in a project. [5 callers]
 routes.ts ★4
   interface Route
   extractRoutes(root: string): Route[] — Extract API routes from the codebase. [3 callers]
@@ -37,6 +37,10 @@ schema.ts ★4
   interface SchemaRelation
   extractSchemas(root: string): SchemaModel[] — Extract database schema from ORM definition files. [3 callers]
   formatSchemas(models: SchemaModel[]): string — Format schemas for skeleton inclusion.
+monorepo.ts ★3
+  interface WorkspaceInfo
+  interface WorkspacePackage
+  detectMonorepo(cwd: string): WorkspaceInfo — Detect if we're in a monorepo and identify packages. [3 callers]
 complexity.ts ★5
   interface ComplexityScore [4 callers]
   computeComplexity(extraction: FileExtraction, depGraph: DepGraph): ComplexityScore — Compute complexity score for a file. [2 callers]
@@ -48,7 +52,6 @@ scripts.ts ★3
   interface ProjectScripts
   extractScripts(root: string): ProjectScripts — Extract build/test/dev commands from package.json, Makefile, etc. [2 callers]
   formatScripts(scripts: ProjectScripts): string — Format scripts for skeleton inclusion. [2 callers]
-monorepo.ts ★2: WorkspaceInfo, WorkspacePackage, detectMonorepo — Detect if we're in a monorepo and identify packages.
 security.ts ★2: SecurityWarning, SecurityIssueType, isSensitiveFile — Check if a file should be excluded from context output for security reasons., scanForSecrets — Scan a file for sensitive data patterns., redactSecrets — Redact sensitive values from text before including in context.
 staleness.ts ★1: StalenessReport, checkStaleness — Check if the briefed context is stale (source files changed since last index)., formatStaleness — Format staleness report for display.
 pipeline.ts ★2
@@ -84,23 +87,23 @@ migrations.ts: Migration, extractMigrations, formatMigrations
 log.ts ★10
   debug(msg: string): void — Lightweight logging utilities. [10 callers]
   warn(msg: string): void
-tokens.ts ★5
+tokens.ts ★6
   countTokens(text: string): number — Estimate token count for a string [5 callers]
-  formatTokens(count: number): string — Format token count for display [3 callers]
+  formatTokens(count: number): string — Format token count for display [4 callers]
   formatBytes(bytes: number): string — Format byte count for display
-pagerank.ts ★2: GraphNode — Simple PageRank implementation for dependency graph ranking., computePageRank — Compute PageRank scores for a file dependency graph., computeRefCounts — Get reference count (in-degree) for each node.
-detect.ts ★5
+detect.ts ★6
   interface StackInfo [2 callers]
-  detectStack(root: string): StackInfo — Detect the project's tech stack from config files [2 callers]
+  detectStack(root: string): StackInfo — Detect the project's tech stack from config files [3 callers]
   extToLanguage(ext: string): string | null — Map file extension to language name
   PARSEABLE_EXTENSIONS — File extensions we should parse [2 callers]
   SKIP_DIRS — Directories to always skip [2 callers]
+pagerank.ts ★2: GraphNode — Simple PageRank implementation for dependency graph ranking., computePageRank — Compute PageRank scores for a file dependency graph., computeRefCounts — Get reference count (in-degree) for each node.
 pagerank.test.ts: 
 
 ## src/mcp/ (6 files)
 blast-radius.ts ★2: blastRadius — BFS over the dependency graph to find all files transitively affected
 
-<!-- briefed skeleton: 40 files, ~1874 tokens -->
+<!-- briefed skeleton: 40 files, ~1891 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
 Tests: 15 source files have matching test files
 Error handling:
@@ -111,10 +114,14 @@ Error handling:
 Usage examples:
   countTokens: const tokens = countTokens(content); (doctor.ts:30)
   countTokens: const skeletonTokens = countTokens(skeleton); (init.ts:67)
+  detectMonorepo: const mono = detectMonorepo(root); (init.ts:33)
+  detectMonorepo: const mono = detectMonorepo(root); (plan.ts:24)
+  detectStack: const stack = detectStack(root); (init.ts:42)
+  detectStack: const stack = detectStack(root); (plan.ts:30)
   scanFiles: const scan = scanFiles(root); (init.ts:47)
-  scanFiles: const result = scanFiles(tmpDir); (scanner.test.ts:21)
+  scanFiles: const scan = scanFiles(root); (plan.ts:34)
   formatTokens: console.log(`  Skeleton: ${formatTokens(skeletonTokens)} tokens`); (init.ts:68)
-  formatTokens: console.log(`  L1 Skeleton:     ${formatTokens(tokens)} tokens (${skeleton.length} chars)`); (stats.ts:20)
+  formatTokens: console.log(`    Skeleton (CLAUDE.md):   ~${formatTokens(estAlwaysLoaded)} tokens (always loaded)`); (plan.ts:104)
   buildDepGraph: const graph = buildDepGraph(extractions, "/project"); (depgraph.test.ts:25)
   buildDepGraph: const depGraph = buildDepGraph(extractions, root); (pipeline.ts:136)
   extractFile: const extraction = extractFile(file.absolutePath, root); (pipeline.ts:104)
@@ -123,12 +130,8 @@ Usage examples:
   extractSchemas: const schemas = extractSchemas(root); (blast-radius.ts:67)
   extractRoutes: routes = extractRoutes(root); (pipeline.ts:235)
   extractRoutes: const routes = extractRoutes(root); (blast-radius.ts:61)
-  removeGitHook: removeGitHook(root); (cli.ts:61)
+  removeGitHook: removeGitHook(root); (cli.ts:68)
   removeGitHook: removeGitHook(tmpDir); (git-hook.test.ts:82)
-  detectMonorepo: const mono = detectMonorepo(root); (init.ts:33)
-  detectMonorepo: const info = detectMonorepo(tmpDir); (monorepo.test.ts:23)
-  detectStack: const stack = detectStack(root); (init.ts:42)
-  detectStack: const info = detectStack(tmpDir); (detect.test.ts:115)
 Commands:
   build: tsc
   dev: tsc --watch
