@@ -34,7 +34,7 @@ import { extractFeatureFlags, formatFeatureFlags } from "../extract/feature-flag
 import { extractCaching, formatCaching } from "../extract/caching.js";
 import { extractAuth, formatAuth } from "../extract/auth.js";
 import { extractEvents, formatEvents } from "../extract/events.js";
-import { deepAnnotate, mergeAnnotations } from "../extract/deep.js";
+import { deepAnnotate, mergeAnnotations, generateDeepRules, generateSystemOverview } from "../extract/deep.js";
 import { generateLearningHookScript } from "../learn/tracker.js";
 import { countTokens, formatTokens } from "../utils/tokens.js";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
@@ -128,11 +128,17 @@ export async function initCommand(opts: InitOptions) {
   console.log(`  Average complexity: ${avgComplexity.toFixed(1)}/10`);
 
   // Step 5b: Deep analysis (optional — uses Claude to describe functions)
+  let deepRuleFiles = new Map<string, string>();
   if (opts.deep) {
     console.log("  Running deep analysis (Claude-powered)...");
     const annotations = await deepAnnotate(extractions, depGraph, complexityScores, root);
     const annotated = mergeAnnotations(extractions, annotations);
-    console.log(`  Annotated ${annotated} functions with behavioral descriptions`);
+    console.log(`  Generated ${annotated} behavioral descriptions`);
+
+    // Generate path-scoped rules with descriptions (loaded only when touching those files)
+    deepRuleFiles = generateDeepRules(extractions, annotations);
+    console.log(`  Created ${deepRuleFiles.size} deep context rule files`);
+
   }
 
   // Step 6: Generate L1 skeleton
@@ -310,9 +316,29 @@ export async function initCommand(opts: InitOptions) {
   console.log("  Generating contracts...");
   generateSimpleContracts(moduleIndex, extractions, depGraph, root);
 
+  // Step 8b: Generate system overview (--deep only, goes into CLAUDE.md)
+  let systemOverview = "";
+  if (opts.deep) {
+    console.log("  Generating system overview...");
+    const annotations = new Map<string, Map<string, string>>();
+    // Rebuild annotations map from merged extractions
+    for (const ext of extractions) {
+      const fileMap = new Map<string, string>();
+      for (const sym of ext.symbols) {
+        if (sym.description) fileMap.set(sym.name, sym.description);
+      }
+      if (fileMap.size > 0) annotations.set(ext.path, fileMap);
+    }
+    const overview = await generateSystemOverview(extractions, depGraph, root, annotations);
+    if (overview) {
+      systemOverview = overview;
+      console.log("  System overview added to CLAUDE.md");
+    }
+  }
+
   // Step 9: Write outputs
   // Append conventions and test info to skeleton
-  let enrichedSkeleton = skeleton;
+  let enrichedSkeleton = systemOverview ? `${systemOverview}\n\n${skeleton}` : skeleton;
   if (convText) {
     enrichedSkeleton += "\n" + convText;
   }
@@ -387,7 +413,11 @@ export async function initCommand(opts: InitOptions) {
     for (const [filename, content] of ruleFiles) {
       writeFileSync(join(rulesDir, filename), content);
     }
-    console.log(`  Wrote ${ruleFiles.size} rule files`);
+    // Write deep behavioral rules alongside gotcha rules
+    for (const [filename, content] of deepRuleFiles) {
+      writeFileSync(join(rulesDir, filename), content);
+    }
+    console.log(`  Wrote ${ruleFiles.size + deepRuleFiles.size} rule files${deepRuleFiles.size > 0 ? ` (${deepRuleFiles.size} deep)` : ""}`);
   }
 
   if (!opts.skipHooks) {
