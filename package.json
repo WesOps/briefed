@@ -1,6 +1,6 @@
 {
   "name": "briefed",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Adaptive Context Engine — compile your codebase into focused, token-efficient context for AI coding tools",
   "type": "module",
   "bin": {

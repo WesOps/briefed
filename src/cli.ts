@@ -22,7 +22,7 @@ program
   .option("--max-tokens <n>", "Token budget for skeleton", "1000")
   .option("--skip-hooks", "Skip hook installation")
   .option("--skip-rules", "Skip .claude/rules/ generation")
-  .option("--deep", "Use Claude to generate behavioral descriptions (uses your subscription, $0 extra)")
+  .option("--fast", "Skip Claude-powered deep analysis (static-only, instant)")
   .action(initCommand);
 
 program

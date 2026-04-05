@@ -47,7 +47,7 @@ interface InitOptions {
   maxTokens: string;
   skipHooks?: boolean;
   skipRules?: boolean;
-  deep?: boolean;
+  fast?: boolean;
 }
 
 export async function initCommand(opts: InitOptions) {
@@ -127,9 +127,9 @@ export async function initCommand(opts: InitOptions) {
     : 0;
   console.log(`  Average complexity: ${avgComplexity.toFixed(1)}/10`);
 
-  // Step 5b: Deep analysis (optional — uses Claude to describe functions)
+  // Step 5b: Deep analysis (default — uses Claude to describe functions)
   let deepRuleFiles = new Map<string, string>();
-  if (opts.deep) {
+  if (!opts.fast) {
     console.log("  Running deep analysis (Claude-powered)...");
     const annotations = await deepAnnotate(extractions, depGraph, complexityScores, root);
     const annotated = mergeAnnotations(extractions, annotations);
@@ -318,7 +318,7 @@ export async function initCommand(opts: InitOptions) {
 
   // Step 8b: Generate system overview (--deep only, goes into CLAUDE.md)
   let systemOverview = "";
-  if (opts.deep) {
+  if (!opts.fast) {
     console.log("  Generating system overview...");
     const annotations = new Map<string, Map<string, string>>();
     // Rebuild annotations map from merged extractions
