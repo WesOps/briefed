@@ -149,9 +149,8 @@ export function generateHookScripts(root: string) {
   const hooksDir = join(root, ".briefed", "hooks");
   mkdirSync(hooksDir, { recursive: true });
 
-  // SessionStart hook — re-inject skeleton after compaction + memories + auto-reindex
   const sessionStartScript = `#!/usr/bin/env node
-// briefed: SessionStart hook — re-inject skeleton + relevant session memories + auto-reindex
+// briefed: SessionStart hook
 const { readFileSync, realpathSync, existsSync, statSync, writeFileSync } = require("fs");
 const { join, resolve } = require("path");
 const { spawn } = require("child_process");
@@ -252,17 +251,18 @@ const testMapPath = join(briefedDir, "test-map.json");
 const historyPath = join(briefedDir, "history.json");
 
 // Security: verify a path is inside .briefed/ before reading
+const realBriefedDir = realpathSync(briefedDir);
 function safeRead(filePath) {
   try {
     const real = realpathSync(filePath);
-    if (!real.startsWith(realpathSync(briefedDir))) return null;
+    if (!real.startsWith(realBriefedDir)) return null;
     return readFileSync(real, "utf-8");
   } catch { return null; }
 }
 function safeExists(filePath) {
   try {
     if (!existsSync(filePath)) return false;
-    return realpathSync(filePath).startsWith(realpathSync(briefedDir));
+    return realpathSync(filePath).startsWith(realBriefedDir);
   } catch { return false; }
 }
 
@@ -340,8 +340,22 @@ process.stdin.on("end", () => {
         require("fs").writeFileSync(logPath, "");
       } catch {}
     }
-    processLog(readsLogPath, 1);
-    processLog(editsLogPath, 3);
+    if (existsSync(readsLogPath)) processLog(readsLogPath, 1);
+    if (existsSync(editsLogPath)) processLog(editsLogPath, 3);
+
+    // Prune learning data: cap at 200 keywords, decay old scores
+    const keys = Object.keys(learning.moduleRelevance);
+    if (keys.length > 200) {
+      const sorted = keys.sort((a, b) => {
+        const sumA = Object.values(learning.moduleRelevance[a]).reduce((s, v) => s + v, 0);
+        const sumB = Object.values(learning.moduleRelevance[b]).reduce((s, v) => s + v, 0);
+        return sumB - sumA;
+      });
+      const pruned = {};
+      for (const k of sorted.slice(0, 150)) pruned[k] = learning.moduleRelevance[k];
+      learning.moduleRelevance = pruned;
+    }
+
     try { require("fs").writeFileSync(learningPath, JSON.stringify(learning, null, 2)); } catch {}
 
     // Adaptive budget based on prompt complexity
@@ -459,9 +473,8 @@ process.stdin.on("end", () => {
 
   writeFileSync(join(hooksDir, "prompt-submit.js"), promptSubmitScript);
 
-  // PostToolUse hook — tracks file reads for learning loop
   writeFileSync(join(hooksDir, "post-read.js"), `#!/usr/bin/env node
-// briefed: PostToolUse hook — tracks which files Claude reads
+// briefed: PostToolUse/Read hook — tracks file reads
 const { appendFileSync, mkdirSync, existsSync } = require("fs");
 const { join } = require("path");
 
@@ -482,9 +495,8 @@ process.stdin.on("end", () => {
 });
 `);
 
-  // PostToolUse hook — tracks file edits + injects test coverage for edited files
   writeFileSync(join(hooksDir, "post-edit.js"), `#!/usr/bin/env node
-// briefed: PostToolUse hook — tracks edits (3x learning weight) + injects test info
+// briefed: PostToolUse/Edit hook — tracks edits + injects test info
 const { appendFileSync, mkdirSync, existsSync, readFileSync } = require("fs");
 const { join, relative } = require("path");
 
@@ -524,9 +536,8 @@ process.stdin.on("end", () => {
 });
 `);
 
-  // Stop hook — capture session memory (what was done, which modules, what failed)
   writeFileSync(join(hooksDir, "session-stop.js"), `#!/usr/bin/env node
-// briefed: Stop hook — captures session memory for future sessions
+// briefed: Stop hook — persists session memory
 const { readFileSync, writeFileSync, existsSync, mkdirSync } = require("fs");
 const { join } = require("path");
 
@@ -541,7 +552,6 @@ process.stdin.on("end", () => {
     const readsPath = join(briefedDir, "session-reads.log");
     const editsPath = join(briefedDir, "session-edits.log");
 
-    // Collect what was read and edited this session
     const reads = existsSync(readsPath) ? readFileSync(readsPath, "utf-8").trim().split("\\n").filter(Boolean) : [];
     const edits = existsSync(editsPath) ? readFileSync(editsPath, "utf-8").trim().split("\\n").filter(Boolean) : [];
 
