@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 import { extname } from "path";
+import { extractWithAst } from "./ast.js";
 
 /**
  * Extracted symbol from a source file.
@@ -12,6 +13,7 @@ export interface Symbol {
   description: string | null; // one-liner from JSDoc/docstring (e.g. "Creates an invoice and emits InvoiceCreated event")
   exported: boolean;
   line: number;
+  confidence?: "ast" | "regex";  // how the symbol was extracted (default: "regex")
 }
 
 export type SymbolKind =
@@ -64,9 +66,31 @@ const LANGUAGE_EXTRACTORS: Record<string, LanguageExtractor> = {
  * Uses regex-based extraction (fast, no WASM dependency).
  * Covers TypeScript, JavaScript, Python, Go, Rust, Java.
  */
+/** Extensions that support AST extraction via the TS compiler API */
+const AST_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
+
 export function extractFile(filePath: string, _rootPath: string): FileExtraction {
-  const content = readFileSync(filePath, "utf-8");
   const ext = extname(filePath);
+
+  // Try AST extraction first for TS/JS files (higher accuracy)
+  if (AST_EXTENSIONS.has(ext)) {
+    const astResult = extractWithAst(filePath);
+    if (astResult && astResult.symbols.length > 0) {
+      // AST succeeded — still add JSDoc descriptions via line scanning
+      const content = readFileSync(filePath, "utf-8");
+      const lines = content.split("\n");
+      for (const sym of astResult.symbols) {
+        if (!sym.description) {
+          sym.description = extractDescription(lines, sym.line - 1);
+        }
+      }
+      return astResult;
+    }
+    // AST returned nothing — fall through to regex
+  }
+
+  // Regex fallback (always works, lower accuracy)
+  const content = readFileSync(filePath, "utf-8");
   const lines = content.split("\n");
 
   const result: FileExtraction = {
@@ -79,8 +103,9 @@ export function extractFile(filePath: string, _rootPath: string): FileExtraction
   const extractor = LANGUAGE_EXTRACTORS[ext] || extractGeneric;
   extractor(content, lines, result);
 
-  // Post-process: add descriptions from docstrings/JSDoc where missing
+  // Post-process: set defaults and add descriptions
   for (const sym of result.symbols) {
+    if (!sym.confidence) sym.confidence = "regex";
     if (!sym.description) {
       sym.description = extractDescription(lines, sym.line - 1);
     }
