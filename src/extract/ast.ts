@@ -81,7 +81,7 @@ export function extractWithAst(filePath: string): FileExtraction | null {
     return "function";
   }
 
-  // Collect all imported names for call graph detection
+  // Collect imported names from relative imports only (project code, not node_modules)
   const importedNames = new Set<string>();
 
   /** Scan a function body for calls to imported symbols */
@@ -137,8 +137,11 @@ export function extractWithAst(filePath: string): FileExtraction | null {
         }
       }
 
-      imports.push({ source, names, isRelative: source.startsWith(".") });
-      for (const n of names) importedNames.add(n);
+      const isRelative = source.startsWith(".");
+      imports.push({ source, names, isRelative });
+      if (isRelative) {
+        for (const n of names) importedNames.add(n);
+      }
       return;
     }
 

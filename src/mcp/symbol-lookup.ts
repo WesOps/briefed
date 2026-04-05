@@ -1,9 +1,6 @@
 import { readFileSync, existsSync } from "fs";
 import { join, basename } from "path";
-import { scanFiles } from "../extract/scanner.js";
-import { extractFile } from "../extract/signatures.js";
-import { buildDepGraph } from "../extract/depgraph.js";
-import { debug } from "../utils/log.js";
+import { loadCachedExtractions } from "./cached-loader.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 /**
@@ -15,19 +12,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
  * - Test coverage (from test-map.json)
  */
 export function symbolLookup(root: string, name: string): CallToolResult {
-  const scan = scanFiles(root);
-  const extractions = scan.files.map((f) => {
-    try {
-      const ext = extractFile(f.absolutePath, root);
-      ext.path = f.path;
-      return ext;
-    } catch (e) {
-      debug(`extraction failed for ${f.path}: ${(e as Error).message}`);
-      return null;
-    }
-  }).filter((e) => e !== null);
-
-  const depGraph = buildDepGraph(extractions, root);
+  const { extractions, depGraph } = loadCachedExtractions(root);
 
   // Find all symbols matching the name (case-insensitive)
   const query = name.toLowerCase();

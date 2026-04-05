@@ -2,10 +2,10 @@
 <!-- briefed:start -->
 # briefed: typescript, javascript project
 Stack: typescript, javascript
-Files: 73 source files across 7 directories
+Files: 74 source files across 7 directories
 
 ## src/extract/ (41 files)
-signatures.ts ★14
+signatures.ts ★13
   interface Symbol — Extracted symbol from a source file. [3 callers]
   type SymbolKind = | "function"
   | "class"
@@ -13,20 +13,20 @@ signatures.ts ★14
   | "type"
   | "enu...
   interface ImportRef — Import reference found in a file.
-  interface FileExtraction — Import reference found in a file. [11 callers]
-  extractFile(filePath: string, _rootPath: string): FileExtraction — Extract symbols and imports from a source file. [4 callers]
+  interface FileExtraction — Import reference found in a file. [12 callers]
+  extractFile(filePath: string, _rootPath: string): FileExtraction — Extract symbols and imports from a source file. [3 callers]
 ast.ts ★2: extractWithAst — AST-based extraction for TypeScript/JavaScript files using the TS compiler API.
-depgraph.ts ★9
-  interface DepGraph [6 callers]
-  buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions. [4 callers]
+depgraph.ts ★8
+  interface DepGraph [7 callers]
+  buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions. [3 callers]
 gotchas.ts ★3
   interface Gotcha [2 callers]
   type GotchaCategory = | "important_comment"   // TODO/HACK/NOTE/WARNING/FIXME with...
   extractGotchas(filePath: string): Gotcha[] — Extract gotchas from a source file. [2 callers]
-scanner.ts ★6
+scanner.ts ★5
   interface DiscoveredFile
   interface ScanResult
-  scanFiles(root: string): ScanResult — Discover all parseable source files in a project. [5 callers]
+  scanFiles(root: string): ScanResult — Discover all parseable source files in a project. [4 callers]
 routes.ts ★4
   interface Route
   extractRoutes(root: string): Route[] — Extract API routes from the codebase. [3 callers]
@@ -84,8 +84,8 @@ jobs.ts: BackgroundJob, extractJobs, formatJobs
 migrations.ts: Migration, extractMigrations, formatMigrations
 
 ## src/utils/ (7 files)
-log.ts ★10
-  debug(msg: string): void — Lightweight logging utilities. [10 callers]
+log.ts ★9
+  debug(msg: string): void — Lightweight logging utilities. [9 callers]
   warn(msg: string): void
 tokens.ts ★6
   countTokens(text: string): number — Estimate token count for a string [5 callers]
@@ -100,10 +100,10 @@ detect.ts ★6
 pagerank.ts ★2: GraphNode — Simple PageRank implementation for dependency graph ranking., computePageRank — Compute PageRank scores for a file dependency graph., computeRefCounts — Get reference count (in-degree) for each node.
 pagerank.test.ts: 
 
-## src/mcp/ (6 files)
-blast-radius.ts ★2: blastRadius — BFS over the dependency graph to find all files transitively affected
+## src/mcp/ (7 files)
+cached-loader.ts ★2: loadCachedExtractions — Load extractions from the SHA256 cache if available, otherwise extract live.
 
-<!-- briefed skeleton: 40 files, ~1891 tokens -->
+<!-- briefed skeleton: 40 files, ~1896 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
 Tests: 15 source files have matching test files
 Error handling:
@@ -127,9 +127,9 @@ Usage examples:
   extractFile: const extraction = extractFile(file.absolutePath, root); (pipeline.ts:104)
   extractFile: const result = extractFile(file, tmpDir); (signatures.test.ts:25)
   extractSchemas: schemas = extractSchemas(root); (pipeline.ts:227)
-  extractSchemas: const schemas = extractSchemas(root); (blast-radius.ts:67)
+  extractSchemas: const schemas = extractSchemas(root); (blast-radius.ts:52)
   extractRoutes: routes = extractRoutes(root); (pipeline.ts:235)
-  extractRoutes: const routes = extractRoutes(root); (blast-radius.ts:61)
+  extractRoutes: const routes = extractRoutes(root); (blast-radius.ts:46)
   removeGitHook: removeGitHook(root); (cli.ts:68)
   removeGitHook: removeGitHook(tmpDir); (git-hook.test.ts:82)
 Commands:

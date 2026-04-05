@@ -1,9 +1,6 @@
-import { scanFiles } from "../extract/scanner.js";
-import { extractFile } from "../extract/signatures.js";
-import { buildDepGraph } from "../extract/depgraph.js";
+import { loadCachedExtractions } from "./cached-loader.js";
 import { extractRoutes } from "../extract/routes.js";
 import { extractSchemas } from "../extract/schema.js";
-import { debug } from "../utils/log.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 /**
@@ -12,19 +9,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
  * routes and schema models.
  */
 export function blastRadius(root: string, file: string): CallToolResult {
-  const scan = scanFiles(root);
-  const extractions = scan.files.map((f) => {
-    try {
-      const ext = extractFile(f.absolutePath, root);
-      ext.path = f.path;
-      return ext;
-    } catch (e) {
-      debug(`extraction failed for ${f.path}: ${(e as Error).message}`);
-      return null;
-    }
-  }).filter((e) => e !== null);
-
-  const depGraph = buildDepGraph(extractions, root);
+  const { depGraph } = loadCachedExtractions(root);
 
   // Normalize the input file path
   const normalized = file.replace(/\\/g, "/");
