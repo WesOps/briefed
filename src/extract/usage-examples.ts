@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
-import { basename, extname } from "path";
-import type { FileExtraction, ImportRef } from "./signatures.js";
+import { basename } from "path";
+import type { FileExtraction } from "./signatures.js";
 
 export interface UsageExample {
   symbol: string;       // the function/class being used

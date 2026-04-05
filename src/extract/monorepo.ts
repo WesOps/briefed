@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { join, relative, resolve } from "path";
 import { glob } from "glob";
+import { debug } from "../utils/log.js";
 
 export interface WorkspaceInfo {
   isMonorepo: boolean;
@@ -49,7 +50,7 @@ export function detectMonorepo(cwd: string): WorkspaceInfo {
           info.packages = resolveWorkspacePackages(searchDir, patterns);
           break;
         }
-      } catch { /* skip */ }
+      } catch (e) { debug(`failed to parse package.json workspaces in ${searchDir}: ${(e as Error).message}`); }
     }
 
     // pnpm workspaces
@@ -94,6 +95,49 @@ export function detectMonorepo(cwd: string): WorkspaceInfo {
       break;
     }
 
+    // Lerna
+    const lernaPath = join(searchDir, "lerna.json");
+    if (existsSync(lernaPath)) {
+      info.isMonorepo = true;
+      info.root = searchDir;
+      try {
+        const lerna = JSON.parse(readFileSync(lernaPath, "utf-8"));
+        const patterns = lerna.packages || ["packages/*"];
+        info.packages = resolveWorkspacePackages(searchDir, patterns);
+      } catch { /* skip */ }
+      break;
+    }
+
+    // Nx
+    const nxPath = join(searchDir, "nx.json");
+    if (existsSync(nxPath)) {
+      info.isMonorepo = true;
+      info.root = searchDir;
+      // Nx uses project.json files in each project directory
+      const projectFiles = glob.sync("**/project.json", {
+        cwd: searchDir,
+        ignore: ["node_modules/**", "dist/**"],
+      });
+      for (const pf of projectFiles) {
+        const projDir = pf.replace(/\/project\.json$/, "");
+        if (projDir === "project.json") continue; // root project.json
+        try {
+          const proj = JSON.parse(readFileSync(join(searchDir, pf), "utf-8"));
+          info.packages.push({
+            name: proj.name || projDir.split("/").pop()!,
+            path: projDir.replace(/\\/g, "/"),
+            absolutePath: join(searchDir, projDir),
+          });
+        } catch { /* skip */ }
+      }
+      // If no project.json files, try workspace layout with apps/ and libs/
+      if (info.packages.length === 0) {
+        const defaultPatterns = ["apps/*", "libs/*", "packages/*"];
+        info.packages = resolveWorkspacePackages(searchDir, defaultPatterns);
+      }
+      break;
+    }
+
     // Cargo workspace
     if (existsSync(join(searchDir, "Cargo.toml"))) {
       try {
@@ -111,7 +155,7 @@ export function detectMonorepo(cwd: string): WorkspaceInfo {
           }
           break;
         }
-      } catch { /* skip */ }
+      } catch (e) { debug(`failed to parse Cargo.toml in ${searchDir}: ${(e as Error).message}`); }
     }
 
     // Move up one directory
@@ -147,7 +191,7 @@ function resolveWorkspacePackages(
           try {
             const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8"));
             name = pkg.name || name;
-          } catch { /* use dir name */ }
+          } catch (e) { debug(`failed to parse package.json for ${dir}: ${(e as Error).message}`); }
         }
         packages.push({
           name,
@@ -155,7 +199,7 @@ function resolveWorkspacePackages(
           absolutePath: join(root, dir),
         });
       }
-    } catch { /* skip */ }
+    } catch (e) { debug(`failed to resolve workspace pattern ${pattern}: ${(e as Error).message}`); }
   }
 
   return packages;

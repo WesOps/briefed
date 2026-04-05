@@ -16,7 +16,7 @@ export interface ProjectConventions {
  */
 export function detectConventions(
   extractions: FileExtraction[],
-  root: string
+  _root: string
 ): ProjectConventions {
   const conventions: ProjectConventions = {
     naming: [],

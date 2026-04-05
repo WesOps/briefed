@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { glob } from "glob";
-import { join, relative } from "path";
+import { join } from "path";
 
 export interface Route {
   method: string;

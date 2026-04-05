@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
 import { glob } from "glob";
 import { join, basename, dirname, extname } from "path";
+import { debug } from "../utils/log.js";
 
 export interface PageRoute {
   path: string;
@@ -64,7 +65,7 @@ export function extractFrontend(root: string): FrontendInfo {
     else if (deps["@chakra-ui/react"]) info.uiLibrary = "chakra";
     else if (deps["@radix-ui/react-dialog"]) info.uiLibrary = "radix";
     else if (deps["antd"]) info.uiLibrary = "antd";
-  } catch { /* not a JS project */ }
+  } catch (e) { debug(`failed to detect frontend framework: ${(e as Error).message}`); }
 
   // Extract pages
   info.pages = extractPages(root, info.framework);

@@ -1,5 +1,4 @@
 import { execSync } from "child_process";
-import { dirname } from "path";
 
 export interface FileHistory {
   file: string;

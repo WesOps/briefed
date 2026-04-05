@@ -1,53 +1,26 @@
 import { resolve } from "path";
 import { detectStack } from "../utils/detect.js";
 import { scanFiles } from "../extract/scanner.js";
-import { extractFile } from "../extract/signatures.js";
-import { buildDepGraph } from "../extract/depgraph.js";
-import { computeComplexity } from "../extract/complexity.js";
-import { extractGotchas } from "../extract/gotchas.js";
-import { findTestMappings } from "../extract/tests.js";
-import { getBatchHistory, formatHistory } from "../extract/history.js";
-import { detectConventions, formatConventions } from "../extract/conventions.js";
-import { generateSkeleton } from "../generate/skeleton.js";
-import { generateRuleFiles } from "../generate/rules.js";
-import { generateModuleIndex, writeModuleIndex, generateSimpleContracts } from "../generate/index-file.js";
-import { updateClaudeMd, saveSkeletonFile } from "../deliver/claudemd.js";
-import { installHooks, generateHookScripts } from "../deliver/hooks.js";
-import { writeCursorRules, writeAgentsMd } from "../deliver/cross-tool.js";
-import { installGitHook } from "../deliver/git-hook.js";
 import { detectMonorepo } from "../extract/monorepo.js";
-import { isSensitiveFile } from "../extract/security.js";
-import { findUsageExamples, formatUsageExamples } from "../extract/usage-examples.js";
-import { detectErrorPatterns } from "../extract/error-patterns.js";
-import { extractSchemas, formatSchemas } from "../extract/schema.js";
-import { extractRoutes, formatRoutes } from "../extract/routes.js";
-import { extractEnvVars, formatEnvVars } from "../extract/env.js";
-import { extractScripts, formatScripts } from "../extract/scripts.js";
-import { extractFrontend, formatFrontend } from "../extract/frontend.js";
-import { extractInfra, formatInfra } from "../extract/infra.js";
-import { extractIntegrations, formatIntegrations } from "../extract/integrations.js";
-import { extractApiSchema, formatApiSchema } from "../extract/api-schema.js";
-import { extractJobs, formatJobs } from "../extract/jobs.js";
-import { extractMigrations, formatMigrations } from "../extract/migrations.js";
-import { extractDeprecations, formatDeprecations } from "../extract/deprecations.js";
-import { extractFeatureFlags, formatFeatureFlags } from "../extract/feature-flags.js";
-import { extractCaching, formatCaching } from "../extract/caching.js";
-import { extractAuth, formatAuth } from "../extract/auth.js";
-import { extractEvents, formatEvents } from "../extract/events.js";
-import { deepAnnotate, mergeAnnotations, generateDeepRules, generateSystemOverview } from "../extract/deep.js";
-
+import { runExtractionPipeline } from "../extract/pipeline.js";
+import { generateSkeleton } from "../generate/skeleton.js";
+import { generateModuleIndex, writeModuleIndex, generateSimpleContracts } from "../generate/index-file.js";
+import { formatConventions } from "../extract/conventions.js";
+import { formatUsageExamples } from "../extract/usage-examples.js";
+import { formatSchemas } from "../extract/schema.js";
+import { formatRoutes } from "../extract/routes.js";
+import { formatEnvVars } from "../extract/env.js";
+import { formatScripts } from "../extract/scripts.js";
+import { formatFrontend } from "../extract/frontend.js";
+import { formatInfra } from "../extract/infra.js";
+import { writeOutputs } from "../deliver/output.js";
 import { countTokens, formatTokens } from "../utils/tokens.js";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import { join } from "path";
-import type { FileExtraction } from "../extract/signatures.js";
-import type { ComplexityScore } from "../extract/complexity.js";
 
 interface InitOptions {
   repo: string;
   maxTokens: string;
   skipHooks?: boolean;
   skipRules?: boolean;
-  fast?: boolean;
 }
 
 export async function initCommand(opts: InitOptions) {
@@ -70,375 +43,67 @@ export async function initCommand(opts: InitOptions) {
   const stack = detectStack(root);
   console.log(`  Stack: ${[...stack.languages, ...stack.frameworks].join(", ")}${stack.dbORM ? ` + ${stack.dbORM}` : ""}`);
 
-  // Step 2: Discover files (with security filtering)
+  // Step 2: Discover files
   console.log("  Scanning files...");
   const scan = scanFiles(root);
-  // Filter out sensitive files
-  const sensitiveCount = scan.files.filter((f) => isSensitiveFile(f.path)).length;
-  scan.files = scan.files.filter((f) => !isSensitiveFile(f.path));
-  if (sensitiveCount > 0) {
-    console.log(`  Excluded ${sensitiveCount} sensitive files (.env, credentials, keys)`);
-  }
-  console.log(`  Found ${scan.totalFiles} source files`);
 
   if (scan.totalFiles === 0) {
     console.log("  No source files found. Nothing to do.");
     return;
   }
 
-  // Step 3: Extract signatures and imports from each file
-  console.log("  Extracting signatures...");
-  const extractions: FileExtraction[] = [];
-  let extractErrors = 0;
+  // Step 3: Run all extraction steps
+  const result = runExtractionPipeline(root, scan, stack);
 
-  for (const file of scan.files) {
-    try {
-      const extraction = extractFile(file.absolutePath, root);
-      extraction.path = file.path; // use relative path
-      extractions.push(extraction);
-    } catch {
-      extractErrors++;
-    }
-  }
-
-  const totalSymbols = extractions.reduce((s, e) => s + e.symbols.length, 0);
-  console.log(`  Extracted ${totalSymbols} symbols from ${extractions.length} files${extractErrors > 0 ? ` (${extractErrors} errors)` : ""}`);
-
-  // Step 4: Build dependency graph
-  console.log("  Building dependency graph...");
-  const depGraph = buildDepGraph(extractions, root);
-  const edgeCount = [...depGraph.nodes.values()].reduce((s, n) => s + n.outEdges.length, 0);
-  console.log(`  Graph: ${depGraph.nodes.size} nodes, ${edgeCount} edges`);
-
-  // Step 5: Compute complexity scores
-  console.log("  Computing complexity scores...");
-  const complexityScores: ComplexityScore[] = [];
-  for (const ext of extractions) {
-    try {
-      const score = computeComplexity(ext, depGraph);
-      complexityScores.push(score);
-    } catch {
-      // Skip files that can't be scored
-    }
-  }
-
-  const avgComplexity = complexityScores.length > 0
-    ? complexityScores.reduce((s, c) => s + c.score, 0) / complexityScores.length
-    : 0;
-  console.log(`  Average complexity: ${avgComplexity.toFixed(1)}/10`);
-
-  // Step 5b: Deep analysis (default — uses Claude to describe functions)
-  let deepRuleFiles = new Map<string, string>();
-  if (!opts.fast) {
-    console.log("  Running deep analysis (Claude-powered)...");
-    const annotations = await deepAnnotate(extractions, depGraph, complexityScores, root);
-    const annotated = mergeAnnotations(extractions, annotations);
-    console.log(`  Generated ${annotated} behavioral descriptions`);
-
-    // Generate path-scoped rules with descriptions (loaded only when touching those files)
-    deepRuleFiles = generateDeepRules(extractions, annotations);
-    console.log(`  Created ${deepRuleFiles.size} deep context rule files`);
-
-  }
-
-  // Step 6: Generate L1 skeleton
+  // Step 4: Generate skeleton and enrich it
   console.log("  Generating skeleton...");
-  const skeleton = generateSkeleton(stack, extractions, depGraph, complexityScores, { maxTokens });
+  const skeleton = generateSkeleton(stack, result.extractions, result.depGraph, result.complexityScores, { maxTokens });
   const skeletonTokens = countTokens(skeleton);
   console.log(`  Skeleton: ${formatTokens(skeletonTokens)} tokens`);
 
-  // Step 7: Extract gotchas
-  console.log("  Extracting gotchas...");
-  let allGotchas: ReturnType<typeof extractGotchas> = [];
-  for (const file of scan.files) {
-    try {
-      const gotchas = extractGotchas(file.absolutePath);
-      allGotchas = allGotchas.concat(gotchas);
-    } catch {
-      // Skip files that can't be analyzed
-    }
-  }
-  console.log(`  Found ${allGotchas.length} gotchas`);
-
-  // Step 7b: Find test file mappings (+45.97% pass@1 from research)
-  console.log("  Mapping test files...");
-  const testMappings = findTestMappings(
-    scan.files.map((f) => f.path),
-    root
-  );
-  console.log(`  Mapped ${testMappings.length} source→test pairs (${testMappings.reduce((s, t) => s + t.testCount, 0)} test cases)`);
-
-  // Step 7c: Extract git history for complex files
-  console.log("  Extracting git history...");
-  const fileComplexityPairs = complexityScores.map((c) => ({
-    path: c.file,
-    complexity: c.score,
-  }));
-  const histories = getBatchHistory(fileComplexityPairs, root, 3);
-  console.log(`  History extracted for ${histories.size} complex files`);
-
-  // Step 7d: Detect project conventions
-  console.log("  Detecting conventions...");
-  const conventions = detectConventions(extractions, root);
-  const convText = formatConventions(conventions);
-  const convCount = [...Object.values(conventions)].flat().length;
-  console.log(`  Detected ${convCount} conventions`);
-
-  // Step 7e: Find usage examples (3x improvement from research)
-  console.log("  Finding usage examples...");
-  const usageExamples = findUsageExamples(extractions);
-  const usageText = formatUsageExamples(usageExamples);
-  console.log(`  Found examples for ${usageExamples.size} symbols`);
-
-  // Step 7f: Detect error handling patterns (prevents 2x error rate)
-  console.log("  Detecting error patterns...");
-  const errorPatterns = detectErrorPatterns(scan.files.map((f) => f.absolutePath));
-  console.log(`  Detected ${errorPatterns.summary.length} error handling patterns`);
-
-  // Domain-specific extractors — only run what's relevant to this project
-  const hasBackend = stack.frameworks.some((f) =>
-    ["express", "fastify", "hono", "nestjs", "django", "fastapi", "flask", "gin", "echo", "fiber"].includes(f.toLowerCase())
-  ) || stack.languages.some((l) => ["go", "rust", "java", "python"].includes(l.toLowerCase()));
-
-  const hasFrontend = stack.frameworks.some((f) =>
-    ["react", "next.js", "vue", "nuxt", "svelte", "astro", "remix", "angular"].includes(f.toLowerCase())
-  );
-
-  const hasORM = !!stack.dbORM;
-
-  const hasInfra = existsSync(join(root, "docker-compose.yml")) ||
-    existsSync(join(root, "docker-compose.yaml")) ||
-    existsSync(join(root, "compose.yml")) ||
-    existsSync(join(root, "Dockerfile")) ||
-    existsSync(join(root, "vercel.json")) ||
-    existsSync(join(root, "fly.toml")) ||
-    existsSync(join(root, "terraform")) ||
-    existsSync(join(root, "k8s"));
-
-  // Schemas — only if ORM detected
-  let schemas: ReturnType<typeof extractSchemas> = [];
-  if (hasORM) {
-    console.log("  Extracting schemas...");
-    schemas = extractSchemas(root);
-    console.log(`  Found ${schemas.length} models/tables`);
-  }
-
-  // Routes — only if backend framework detected
-  let routes: ReturnType<typeof extractRoutes> = [];
-  if (hasBackend || stack.frameworks.includes("next.js")) {
-    console.log("  Extracting routes...");
-    routes = extractRoutes(root);
-    if (routes.length > 0) console.log(`  Found ${routes.length} API endpoints`);
-  }
-
-  // Env vars — always useful
-  console.log("  Extracting env vars...");
-  const envVars = extractEnvVars(root);
-  if (envVars.length > 0) console.log(`  Found ${envVars.length} env vars (${envVars.filter((v) => v.required).length} required)`);
-
-  // Scripts — always useful
-  const scripts = extractScripts(root);
-
-  // Frontend — only if frontend framework detected
-  let frontend: ReturnType<typeof extractFrontend> = {
-    framework: null, pages: [], components: [], stateStores: [], styling: null, uiLibrary: null
-  };
-  if (hasFrontend) {
-    console.log("  Extracting frontend...");
-    frontend = extractFrontend(root);
-    console.log(`  Frontend: ${frontend.framework}, ${frontend.pages.length} pages, ${frontend.components.length} components`);
-  }
-
-  // Infra — only if infra files detected
-  let infra: ReturnType<typeof extractInfra> = {
-    services: [], ports: [], volumes: [], networks: [], providers: [], deployment: null
-  };
-  if (hasInfra) {
-    console.log("  Extracting infrastructure...");
-    infra = extractInfra(root);
-    console.log(`  Infra: ${infra.services.length} services, deployment: ${infra.deployment || "detected"}`);
-  }
-
-  // External integrations — always useful
-  console.log("  Detecting integrations...");
-  const integrations = extractIntegrations(root);
-  if (integrations.length > 0) console.log(`  Found ${integrations.length} integrations (${integrations.map(i => i.name).join(", ")})`);
-
-  // OpenAPI / GraphQL schemas
-  console.log("  Checking API schemas...");
-  const apiSchemas = extractApiSchema(root);
-  if (apiSchemas.length > 0) console.log(`  Found ${apiSchemas.length} API schema files`);
-
-  // Background jobs
-  console.log("  Detecting background jobs...");
-  const jobs = extractJobs(root);
-  if (jobs.length > 0) console.log(`  Found ${jobs.length} background jobs`);
-
-  // Recent migrations — only if ORM detected
-  let migrations: ReturnType<typeof extractMigrations> = [];
-  if (hasORM) {
-    console.log("  Checking recent migrations...");
-    migrations = extractMigrations(root);
-    if (migrations.length > 0) console.log(`  Found ${migrations.length} recent migrations`);
-  }
-
-  // Deprecations
-  console.log("  Scanning deprecations...");
-  const deprecations = extractDeprecations(root);
-  if (deprecations.length > 0) console.log(`  Found ${deprecations.length} deprecated items`);
-
-  // Feature flags
-  console.log("  Detecting feature flags...");
-  const featureFlags = extractFeatureFlags(root);
-  if (featureFlags.length > 0) console.log(`  Found ${featureFlags.length} feature flags`);
-
-  // Caching patterns
-  console.log("  Detecting caching patterns...");
-  const cachingPatterns = extractCaching(root);
-  if (cachingPatterns.length > 0) console.log(`  Found ${cachingPatterns.length} caching patterns`);
-
-  // Auth model
-  console.log("  Detecting auth model...");
-  const authInfo = extractAuth(root);
-  if (authInfo) console.log(`  Auth: ${authInfo.provider} (${authInfo.strategy.join(", ")})`);
-
-  // Event/webhook contracts
-  console.log("  Detecting events/webhooks...");
-  const events = extractEvents(root);
-  if (events.length > 0) console.log(`  Found ${events.length} event contracts`);
-
-  // Step 8: Generate module index + contracts
+  // Step 5: Generate module index + contracts
   console.log("  Generating module index...");
-  const moduleIndex = generateModuleIndex(extractions, depGraph, complexityScores, root);
+  const moduleIndex = generateModuleIndex(result.extractions, result.depGraph, result.complexityScores, root);
   writeModuleIndex(root, moduleIndex);
   console.log(`  Indexed ${moduleIndex.modules.length} modules`);
 
   console.log("  Generating contracts...");
-  generateSimpleContracts(moduleIndex, extractions, depGraph, root);
+  generateSimpleContracts(moduleIndex, result.extractions, result.depGraph, root);
 
-  // Step 8b: Generate system overview (--deep only, goes into CLAUDE.md)
-  let systemOverview = "";
-  if (!opts.fast) {
-    console.log("  Generating system overview...");
-    const annotations = new Map<string, Map<string, string>>();
-    // Rebuild annotations map from merged extractions
-    for (const ext of extractions) {
-      const fileMap = new Map<string, string>();
-      for (const sym of ext.symbols) {
-        if (sym.description) fileMap.set(sym.name, sym.description);
-      }
-      if (fileMap.size > 0) annotations.set(ext.path, fileMap);
-    }
-    const overview = await generateSystemOverview(extractions, depGraph, root, annotations);
-    if (overview) {
-      systemOverview = overview;
-      console.log("  System overview added to CLAUDE.md");
-    }
-  }
-
-  // Step 9: Write outputs
-  // Append conventions and test info to skeleton
-  let enrichedSkeleton = systemOverview ? `${systemOverview}\n\n${skeleton}` : skeleton;
+  // Step 6: Enrich skeleton with extracted context
+  const convText = formatConventions(result.conventions);
+  let enrichedSkeleton = skeleton;
   if (convText) {
     enrichedSkeleton += "\n" + convText;
   }
-  if (testMappings.length > 0) {
-    enrichedSkeleton += "\nTests: " + testMappings.length + " source files have matching test files";
+  if (result.testMappings.length > 0) {
+    enrichedSkeleton += "\nTests: " + result.testMappings.length + " source files have matching test files";
   }
-  const scriptsText = formatScripts(scripts);
+  if (result.errorPatterns.summary.length > 0) {
+    enrichedSkeleton += "\nError handling:\n" + result.errorPatterns.summary.map((s) => `  - ${s}`).join("\n");
+  }
+  const usageText = formatUsageExamples(result.usageExamples);
+  if (usageText) enrichedSkeleton += "\n" + usageText;
+  const scriptsText = formatScripts(result.scripts);
   if (scriptsText) enrichedSkeleton += "\n" + scriptsText;
-  const schemasText = formatSchemas(schemas);
+  const schemasText = formatSchemas(result.schemas);
   if (schemasText) enrichedSkeleton += "\n" + schemasText;
-  const routesText = formatRoutes(routes);
+  const routesText = formatRoutes(result.routes);
   if (routesText) enrichedSkeleton += "\n" + routesText;
-  const envText = formatEnvVars(envVars);
+  const envText = formatEnvVars(result.envVars);
   if (envText) enrichedSkeleton += "\n" + envText;
-  const frontendText = formatFrontend(frontend);
+  const frontendText = formatFrontend(result.frontend);
   if (frontendText) enrichedSkeleton += "\n" + frontendText;
-  const infraText = formatInfra(infra);
+  const infraText = formatInfra(result.infra);
   if (infraText) enrichedSkeleton += "\n" + infraText;
-  const authText = formatAuth(authInfo);
-  if (authText) enrichedSkeleton += "\n" + authText;
-  const integrationsText = formatIntegrations(integrations);
-  if (integrationsText) enrichedSkeleton += "\n" + integrationsText;
-  const apiSchemaText = formatApiSchema(apiSchemas);
-  if (apiSchemaText) enrichedSkeleton += "\n" + apiSchemaText;
-  const jobsText = formatJobs(jobs);
-  if (jobsText) enrichedSkeleton += "\n" + jobsText;
-  const migrationsText = formatMigrations(migrations);
-  if (migrationsText) enrichedSkeleton += "\n" + migrationsText;
-  const deprecationsText = formatDeprecations(deprecations);
-  if (deprecationsText) enrichedSkeleton += "\n" + deprecationsText;
-  const flagsText = formatFeatureFlags(featureFlags);
-  if (flagsText) enrichedSkeleton += "\n" + flagsText;
-  const cachingText = formatCaching(cachingPatterns);
-  if (cachingText) enrichedSkeleton += "\n" + cachingText;
-  const eventsText = formatEvents(events);
-  if (eventsText) enrichedSkeleton += "\n" + eventsText;
 
-  // Save test mappings to .briefed/ for hook use
-  const briefedDir = join(root, ".briefed");
-  if (!existsSync(briefedDir)) mkdirSync(briefedDir, { recursive: true });
-  writeFileSync(
-    join(briefedDir, "test-map.json"),
-    JSON.stringify(
-      Object.fromEntries(testMappings.map((t) => [t.sourceFile, { test: t.testFile, count: t.testCount, names: t.testNames.slice(0, 10) }])),
-      null,
-      2
-    )
-  );
+  // Step 7: Write all outputs
+  const outputSummary = writeOutputs(root, result, enrichedSkeleton, convText, {
+    skipHooks: opts.skipHooks,
+    skipRules: opts.skipRules,
+  });
 
-  // Save histories to .briefed/ for hook use
-  if (histories.size > 0) {
-    const histObj: Record<string, unknown> = {};
-    for (const [file, hist] of histories) {
-      histObj[file] = {
-        frequency: hist.changeFrequency,
-        recent: hist.recentCommits.slice(0, 3).map((c) => c.message),
-      };
-    }
-    writeFileSync(join(briefedDir, "history.json"), JSON.stringify(histObj, null, 2));
-  }
-
-  console.log("  Writing skeleton to CLAUDE.md...");
-  updateClaudeMd(root, enrichedSkeleton);
-  saveSkeletonFile(root, enrichedSkeleton);
-
-  if (!opts.skipRules) {
-    console.log("  Writing gotchas to .claude/rules/...");
-    const ruleFiles = generateRuleFiles(allGotchas, root);
-    const rulesDir = join(root, ".claude", "rules");
-    if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
-
-    for (const [filename, content] of ruleFiles) {
-      writeFileSync(join(rulesDir, filename), content);
-    }
-    // Write deep behavioral rules alongside gotcha rules
-    for (const [filename, content] of deepRuleFiles) {
-      writeFileSync(join(rulesDir, filename), content);
-    }
-    console.log(`  Wrote ${ruleFiles.size + deepRuleFiles.size} rule files${deepRuleFiles.size > 0 ? ` (${deepRuleFiles.size} deep)` : ""}`);
-  }
-
-  if (!opts.skipHooks) {
-    console.log("  Installing hooks...");
-    generateHookScripts(root);
-    installHooks(root);
-    console.log("  Hooks installed in .claude/settings.json");
-  }
-
-  // Cross-tool output
-  console.log("  Writing cross-tool context...");
-  writeCursorRules(root, enrichedSkeleton, convText);
-  writeAgentsMd(root, enrichedSkeleton, convText);
-
-  // Git hook for auto-updates
-  const hookInstalled = installGitHook(root);
-  if (hookInstalled) {
-    console.log("  Git hook installed (auto-updates on every commit)");
-  }
-
-  // Step 10: Summary
+  // Step 8: Summary
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
   console.log("");
@@ -448,22 +113,22 @@ export async function initCommand(opts: InitOptions) {
   console.log(`    CLAUDE.md            — skeleton + conventions (~${formatTokens(countTokens(enrichedSkeleton))} tokens)`);
   console.log(`    .cursorrules         — Cursor IDE context`);
   console.log(`    AGENTS.md            — cross-tool context`);
-  console.log(`    .claude/rules/       — gotchas (${allGotchas.length} constraints, path-scoped)`);
+  console.log(`    .claude/rules/       — gotchas (${result.gotchas.length} constraints, path-scoped)`);
   console.log(`    .briefed/contracts/     — module contracts (${moduleIndex.modules.length} modules)`);
-  console.log(`    .briefed/test-map.json  — test mappings (${testMappings.length} pairs, ${testMappings.reduce((s, t) => s + t.testCount, 0)} tests)`);
-  console.log(`    .briefed/history.json   — git history (${histories.size} files)`);
+  console.log(`    .briefed/test-map.json  — test mappings (${result.testMappings.length} pairs, ${result.testMappings.reduce((s, t) => s + t.testCount, 0)} tests)`);
+  console.log(`    .briefed/history.json   — git history (${result.histories.size} files)`);
   if (!opts.skipHooks) {
     console.log(`    .claude/settings.json — adaptive hooks`);
   }
-  if (hookInstalled) {
+  if (outputSummary.gitHookInstalled) {
     console.log(`    .git/hooks/post-commit — auto-updates on every commit`);
   }
   // Context budget report
   const skeletonTk = countTokens(enrichedSkeleton);
-  const ruleTokens = allGotchas.length > 0 ? countTokens(allGotchas.map((g) => g.text).join("\n")) : 0;
+  const ruleTokens = result.gotchas.length > 0 ? countTokens(result.gotchas.map((g) => g.text).join("\n")) : 0;
   const totalAlwaysLoaded = skeletonTk;
   const totalPerPrompt = 500; // average contract injection
-  const totalPerFile = Math.round(ruleTokens / Math.max(1, allGotchas.length)) * 3; // ~3 gotchas per file
+  const totalPerFile = Math.round(ruleTokens / Math.max(1, result.gotchas.length)) * 3; // ~3 gotchas per file
 
   console.log("");
   console.log("  Context budget:");

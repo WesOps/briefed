@@ -26,9 +26,9 @@ export interface ModuleIndex {
  */
 export function generateModuleIndex(
   extractions: FileExtraction[],
-  depGraph: DepGraph,
+  _depGraph: DepGraph,
   complexity: ComplexityScore[],
-  root: string
+  _root: string
 ): ModuleIndex {
   // Group files by directory
   const dirGroups = new Map<string, FileExtraction[]>();
@@ -134,7 +134,7 @@ export function writeModuleIndex(root: string, index: ModuleIndex) {
 export function generateSimpleContracts(
   index: ModuleIndex,
   extractions: FileExtraction[],
-  depGraph: DepGraph,
+  _depGraph: DepGraph,
   root: string
 ) {
   const contractsDir = join(root, ".briefed", "contracts");

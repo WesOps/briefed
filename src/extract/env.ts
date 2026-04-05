@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { glob } from "glob";
+import { debug } from "../utils/log.js";
 
 export interface EnvVar {
   name: string;
@@ -70,7 +71,7 @@ export function extractEnvVars(root: string): EnvVar[] {
       for (const match of envRefs) {
         addVar(vars, match[1], f, false);
       }
-    } catch { /* skip */ }
+    } catch (e) { debug(`failed to parse env vars from config file ${f}: ${(e as Error).message}`); }
   }
 
   return [...vars.values()];

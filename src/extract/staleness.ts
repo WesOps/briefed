@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { execSync } from "child_process";
+import { debug } from "../utils/log.js";
 
 export interface StalenessReport {
   isStale: boolean;
@@ -37,7 +38,6 @@ export function checkStaleness(root: string): StalenessReport {
 
   // Use git to find files changed since last index
   try {
-    const sinceDate = indexStat.mtime.toISOString();
     const changedOutput = execSync(
       `git diff --name-only --diff-filter=ACMR HEAD -- "*.ts" "*.tsx" "*.js" "*.jsx" "*.py" "*.go" "*.rs" "*.java"`,
       { cwd: root, encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] }
@@ -88,7 +88,7 @@ export function checkStaleness(root: string): StalenessReport {
         (sum: number, m: { files?: string[] }) => sum + (m.files?.length || 0),
         0
       ) || 0;
-    } catch { /* skip */ }
+    } catch (e) { debug(`failed to parse index.json for file count: ${(e as Error).message}`); }
 
     report.stalePct = report.totalFiles > 0
       ? Math.round((staleCount / report.totalFiles) * 100)
@@ -97,8 +97,8 @@ export function checkStaleness(root: string): StalenessReport {
     // Consider stale if >10% of files changed or >5 files changed
     report.isStale = staleCount > 5 || report.stalePct > 10;
 
-  } catch {
-    // Not a git repo or git not available — check file timestamps
+  } catch (e) {
+    debug(`staleness git check failed: ${(e as Error).message}`);
     report.details.push("No git available — using timestamp comparison");
     report.isStale = true;
   }

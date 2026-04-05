@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from "fs";
+import { readFileSync } from "fs";
 import { join, basename } from "path";
 import { glob } from "glob";
 

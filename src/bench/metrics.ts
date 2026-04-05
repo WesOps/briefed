@@ -45,18 +45,21 @@ export function parseResult(filePath: string): TaskMetrics {
 
   if (!data) throw new Error("No valid JSON found in transcript");
 
-  const usage = (data!.usage || {}) as Record<string, unknown>;
+  const usage = (typeof data.usage === "object" && data.usage !== null ? data.usage : {}) as Record<string, unknown>;
+
+  const num = (v: unknown): number => (typeof v === "number" ? v : 0);
+  const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
   return {
-    durationMs: (data.duration_ms as number) || 0,
-    numTurns: (data.num_turns as number) || 0,
-    inputTokens: (usage.input_tokens as number) || 0,
-    outputTokens: (usage.output_tokens as number) || 0,
-    cacheCreationTokens: (usage.cache_creation_input_tokens as number) || 0,
-    cacheReadTokens: (usage.cache_read_input_tokens as number) || 0,
-    totalCostUsd: (data.total_cost_usd as number) || 0,
-    resultLength: ((data.result as string) || "").length,
-    sessionId: (data.session_id as string) || "",
+    durationMs: num(data.duration_ms),
+    numTurns: num(data.num_turns),
+    inputTokens: num(usage.input_tokens),
+    outputTokens: num(usage.output_tokens),
+    cacheCreationTokens: num(usage.cache_creation_input_tokens),
+    cacheReadTokens: num(usage.cache_read_input_tokens),
+    totalCostUsd: num(data.total_cost_usd),
+    resultLength: str(data.result).length,
+    sessionId: str(data.session_id),
     success: data.subtype === "success" && !data.is_error,
   };
 }
@@ -209,7 +212,7 @@ function padRow(label: string, col1: string, col2: string, col3: string): string
   return `  ${label.padEnd(18)} ${col1.padStart(14)} ${col2.padStart(14)} ${col3.padStart(10)}`;
 }
 
-function formatDelta(before: number, after: number, higherIsBetter = false): string {
+function formatDelta(before: number, after: number, _higherIsBetter = false): string {
   if (before === 0 && after === 0) return "—";
   if (before === 0) return `+${after}`;
   const pct = Math.round(((after - before) / before) * 100);

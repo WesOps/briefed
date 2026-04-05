@@ -1,6 +1,5 @@
 import { dirname, join, relative } from "path";
-import { existsSync } from "fs";
-import type { FileExtraction, ImportRef } from "./signatures.js";
+import type { FileExtraction } from "./signatures.js";
 import { GraphNode, computePageRank, computeRefCounts } from "../utils/pagerank.js";
 
 export interface DepGraph {

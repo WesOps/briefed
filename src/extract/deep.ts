@@ -16,7 +16,7 @@ import type { ComplexityScore } from "./complexity.js";
 export async function deepAnnotate(
   extractions: FileExtraction[],
   depGraph: DepGraph,
-  complexity: ComplexityScore[],
+  _complexity: ComplexityScore[],
   root: string,
 ): Promise<Map<string, Map<string, string>>> {
   const annotations = new Map<string, Map<string, string>>();
@@ -257,7 +257,7 @@ export function generateDeepRules(
  */
 export async function generateSystemOverview(
   extractions: FileExtraction[],
-  depGraph: DepGraph,
+  _depGraph: DepGraph,
   root: string,
   annotations: Map<string, Map<string, string>>,
 ): Promise<string | null> {

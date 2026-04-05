@@ -78,10 +78,6 @@ function parseOpenApi(content: string, file: string): ApiSchemaInfo | null {
   if (versionMatch) version = versionMatch[1];
   else if (!content.includes("paths") && !content.includes("openapi") && !content.includes("swagger")) return null;
 
-  // Extract paths — works for both JSON and YAML
-  const pathRegex = /['"]?(\/[^'":\s{]*?)['"]?\s*:/g;
-  const methodRegex = /['"]?(get|post|put|patch|delete|options|head)['"]?\s*:/gi;
-
   // Simple extraction: find path-like keys followed by method keys
   const lines = content.split("\n");
   let currentPath = "";

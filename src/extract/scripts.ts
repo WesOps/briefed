@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
+import { debug } from "../utils/log.js";
 
 export interface ProjectScripts {
   build: string | null;
@@ -44,10 +45,10 @@ export function extractScripts(root: string): ProjectScripts {
       for (const [name, cmd] of Object.entries(s)) {
         if (["build", "dev", "test", "lint", "start", "deploy", "serve", "postinstall", "prepare", "precommit"].includes(name)) continue;
         if (typeof cmd === "string" && name.length < 20) {
-          scripts.other[name] = cmd as string;
+          scripts.other[name] = cmd;
         }
       }
-    } catch { /* skip */ }
+    } catch (e) { debug(`failed to parse package.json scripts: ${(e as Error).message}`); }
   }
 
   // Makefile
@@ -64,7 +65,7 @@ export function extractScripts(root: string): ProjectScripts {
         if (target === "lint" && !scripts.lint) scripts.lint = `make lint`;
         if (target === "deploy" && !scripts.deploy) scripts.deploy = `make deploy`;
       }
-    } catch { /* skip */ }
+    } catch (e) { debug(`failed to parse Makefile: ${(e as Error).message}`); }
   }
 
   // Go

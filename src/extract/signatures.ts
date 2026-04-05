@@ -42,12 +42,29 @@ export interface FileExtraction {
   lineCount: number;
 }
 
+type LanguageExtractor = (content: string, lines: string[], result: FileExtraction) => void;
+
+/** Map file extensions to their language-specific extractor */
+const LANGUAGE_EXTRACTORS: Record<string, LanguageExtractor> = {
+  ".ts": extractTypeScript,
+  ".tsx": extractTypeScript,
+  ".js": extractTypeScript,
+  ".jsx": extractTypeScript,
+  ".mjs": extractTypeScript,
+  ".cjs": extractTypeScript,
+  ".py": extractPython,
+  ".go": extractGo,
+  ".rs": extractRust,
+  ".java": extractJava,
+  ".kt": extractJava,
+};
+
 /**
  * Extract symbols and imports from a source file.
  * Uses regex-based extraction (fast, no WASM dependency).
  * Covers TypeScript, JavaScript, Python, Go, Rust, Java.
  */
-export function extractFile(filePath: string, rootPath: string): FileExtraction {
+export function extractFile(filePath: string, _rootPath: string): FileExtraction {
   const content = readFileSync(filePath, "utf-8");
   const ext = extname(filePath);
   const lines = content.split("\n");
@@ -59,31 +76,8 @@ export function extractFile(filePath: string, rootPath: string): FileExtraction 
     lineCount: lines.length,
   };
 
-  switch (ext) {
-    case ".ts":
-    case ".tsx":
-    case ".js":
-    case ".jsx":
-    case ".mjs":
-    case ".cjs":
-      extractTypeScript(content, lines, result);
-      break;
-    case ".py":
-      extractPython(content, lines, result);
-      break;
-    case ".go":
-      extractGo(content, lines, result);
-      break;
-    case ".rs":
-      extractRust(content, lines, result);
-      break;
-    case ".java":
-    case ".kt":
-      extractJava(content, lines, result);
-      break;
-    default:
-      extractGeneric(content, lines, result);
-  }
+  const extractor = LANGUAGE_EXTRACTORS[ext] || extractGeneric;
+  extractor(content, lines, result);
 
   // Post-process: add descriptions from docstrings/JSDoc where missing
   for (const sym of result.symbols) {
@@ -191,9 +185,10 @@ function extractTypeScript(content: string, lines: string[], result: FileExtract
     );
     if (exportFnMatch) {
       const retType = exportFnMatch[3] || inferReturnType(exportFnMatch[1]);
+      const isRoute = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(exportFnMatch[1]);
       result.symbols.push({
         name: exportFnMatch[1],
-        kind: isReactComponent(exportFnMatch[1]) ? "component" : "function",
+        kind: isRoute ? "route" : isReactComponent(exportFnMatch[1]) ? "component" : "function",
         signature: `${exportFnMatch[1]}${exportFnMatch[2]}${retType ? `: ${retType.replace(/\s*\{?\s*$/, "")}` : ""}`,
         description: null,
         exported: true,
@@ -392,8 +387,10 @@ function extractClassMethods(
   className: string,
   result: FileExtraction
 ) {
-  let braceDepth = 0;
-  let started = false;
+  // If the class opening { was on the declaration line, we start inside the body
+  const classLine = lines[startLine - 1] || "";
+  let braceDepth = classLine.includes("{") ? 1 : 0;
+  let started = braceDepth > 0;
 
   for (let i = startLine; i < lines.length; i++) {
     const line = lines[i];
@@ -445,9 +442,8 @@ function isReactComponent(name: string): boolean {
   return /^[A-Z]/.test(name) && !/^[A-Z_]+$/.test(name);
 }
 
-function inferReturnType(name: string): string {
-  if (name.startsWith("get") || name.startsWith("find") || name.startsWith("fetch"))
-    return "";
+function inferReturnType(_name: string): string {
+  // TODO: implement return type inference from function name heuristics
   return "";
 }
 
@@ -693,7 +689,7 @@ function extractJava(content: string, lines: string[], result: FileExtraction) {
 
 // -- Generic fallback --
 
-function extractGeneric(content: string, lines: string[], result: FileExtraction) {
+function extractGeneric(_content: string, lines: string[], result: FileExtraction) {
   // Very basic: look for function/class definitions
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
