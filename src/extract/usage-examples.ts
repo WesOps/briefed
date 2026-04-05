@@ -114,7 +114,8 @@ export function formatUsageExamples(
   for (const [symbol, usages] of sorted) {
     if (count >= maxTotal) break;
 
-    for (const usage of usages) {
+    // Max 2 examples per symbol — more is redundant
+    for (const usage of usages.slice(0, 2)) {
       if (count >= maxTotal) break;
       lines.push(`  ${symbol}: ${usage.snippet} (${basename(usage.file)}:${usage.line})`);
       count++;

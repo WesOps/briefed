@@ -60,23 +60,18 @@ export function generateModuleIndex(
       }
     }
 
-    // File names (without extension)
+    // File names (without extension, skip test files)
     for (const f of files) {
       const name = basename(f.path).replace(/\.[^.]+$/, "");
+      if (/\.(test|spec|stories)$/.test(name)) continue; // skip test file keywords
       keywords.add(name.toLowerCase());
-      for (const word of splitIdentifier(name)) {
-        if (word.length > 2) keywords.add(word.toLowerCase());
-      }
     }
 
-    // Exported symbol names
+    // Exported symbol names (full names only — fragments are low-signal noise)
     for (const f of files) {
       for (const sym of f.symbols.filter((s) => s.exported)) {
         const name = sym.name.split(".").pop()!;
-        keywords.add(name.toLowerCase());
-        for (const word of splitIdentifier(name)) {
-          if (word.length > 2) keywords.add(word.toLowerCase());
-        }
+        if (name.length > 3) keywords.add(name.toLowerCase());
       }
     }
 

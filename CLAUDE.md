@@ -1,34 +1,3 @@
-<!-- cctx:start -->
-# cctx: typescript, javascript project
-Stack: typescript, javascript
-Files: 16 source files across 5 directories
-
-## src/extract/ (5 files)
-complexity.ts: ComplexityScore
-depgraph.ts: DepGraph
-gotchas.ts: Gotcha, extractGotchas
-scanner.ts: DiscoveredFile, ScanResult, scanFiles
-signatures.ts: Symbol, ImportRef, FileExtraction, extractFile
-
-## src/utils/ (3 files)
-detect.ts: StackInfo, detectStack, extToLanguage, PARSEABLE_EXTENSIONS, SKIP_DIRS
-pagerank.ts: GraphNode, computeRefCounts
-tokens.ts: countTokens, formatTokens, formatBytes
-
-## src/commands/ (2 files)
-init.ts: initCommand
-stats.ts: statsCommand
-
-## src/deliver/ (2 files)
-claudemd.ts: updateClaudeMd, saveSkeletonFile
-hooks.ts: installHooks, generateHookScripts
-
-## src/generate/ (3 files)
-index-file.ts: ModuleEntry, ModuleIndex, writeModuleIndex
-skeleton.ts: SkeletonOptions
-
-<!-- cctx skeleton: 14 files, ~228 tokens -->
-<!-- cctx:end -->
 
 <!-- briefed:start -->
 # briefed: typescript, javascript project
@@ -145,24 +114,24 @@ Error handling:
 Usage examples:
   countTokens: const tokens = countTokens(content); (doctor.ts:30)
   countTokens: const skeletonTokens = countTokens(skeleton); (init.ts:67)
-  countTokens: const tokens = countTokens(skeleton); (stats.ts:19)
   scanFiles: const scan = scanFiles(root); (init.ts:47)
   scanFiles: const result = scanFiles(tmpDir); (scanner.test.ts:21)
-  scanFiles: const scan = scanFiles(root); (blast-radius.ts:15)
   formatTokens: console.log(`  Skeleton: ${formatTokens(skeletonTokens)} tokens`); (init.ts:68)
   formatTokens: console.log(`  L1 Skeleton:     ${formatTokens(tokens)} tokens (${skeleton.length} chars)`); (stats.ts:20)
-  formatTokens: expect(formatTokens(500)).toBe("500"); (tokens.test.ts:38)
   buildDepGraph: const graph = buildDepGraph(extractions, "/project"); (depgraph.test.ts:25)
   buildDepGraph: const depGraph = buildDepGraph(extractions, root); (pipeline.ts:136)
-  buildDepGraph: const depGraph = buildDepGraph(extractions, root); (blast-radius.ts:27)
   extractFile: const extraction = extractFile(file.absolutePath, root); (pipeline.ts:104)
   extractFile: const result = extractFile(file, tmpDir); (signatures.test.ts:25)
-  extractFile: const ext = extractFile(f.absolutePath, root); (blast-radius.ts:18)
   extractSchemas: schemas = extractSchemas(root); (pipeline.ts:227)
   extractSchemas: const schemas = extractSchemas(root); (blast-radius.ts:67)
-  extractSchemas: const schemas = extractSchemas(root); (schema-lookup.ts:8)
   extractRoutes: routes = extractRoutes(root); (pipeline.ts:235)
   extractRoutes: const routes = extractRoutes(root); (blast-radius.ts:61)
+  removeGitHook: removeGitHook(root); (cli.ts:61)
+  removeGitHook: removeGitHook(tmpDir); (git-hook.test.ts:82)
+  detectMonorepo: const mono = detectMonorepo(root); (init.ts:33)
+  detectMonorepo: const info = detectMonorepo(tmpDir); (monorepo.test.ts:23)
+  detectStack: const stack = detectStack(root); (init.ts:42)
+  detectStack: const info = detectStack(tmpDir); (detect.test.ts:115)
 Commands:
   build: tsc
   dev: tsc --watch

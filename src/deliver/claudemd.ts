@@ -22,6 +22,14 @@ export function updateClaudeMd(root: string, skeleton: string) {
   if (existsSync(claudeMdPath)) {
     let content = readFileSync(claudeMdPath, "utf-8");
 
+    // Remove legacy cctx section if present (superseded by briefed)
+    const cctxStart = content.indexOf("<!-- cctx:start -->");
+    const cctxEnd = content.indexOf("<!-- cctx:end -->");
+    if (cctxStart !== -1 && cctxEnd !== -1) {
+      content = content.slice(0, cctxStart) + content.slice(cctxEnd + "<!-- cctx:end -->".length);
+      content = content.replace(/^\n{2,}/, "\n"); // clean up leading blank lines
+    }
+
     if (content.includes(BRIEFED_START)) {
       // Replace existing briefed section
       const startIdx = content.indexOf(BRIEFED_START);
