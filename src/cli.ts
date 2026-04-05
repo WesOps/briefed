@@ -5,6 +5,7 @@ import { initCommand } from "./commands/init.js";
 import { statsCommand } from "./commands/stats.js";
 import { benchCommand } from "./commands/bench.js";
 import { doctorCommand } from "./commands/doctor.js";
+import { planCommand } from "./commands/plan.js";
 import { removeGitHook } from "./deliver/git-hook.js";
 import { startMcpServer } from "./mcp/server.js";
 import { resolve } from "path";
@@ -25,7 +26,6 @@ program
   .option("--max-tokens <n>", "Token budget for skeleton (default: auto-scaled by project size)", "auto")
   .option("--skip-hooks", "Skip hook installation")
   .option("--skip-rules", "Skip .claude/rules/ generation")
-  .option("--fast", "Skip Claude-powered deep analysis (static-only, instant)")
   .action(initCommand);
 
 program
@@ -51,6 +51,12 @@ program
   .option("--report-only", "Just generate report from existing transcripts")
   .option("--output <dir>", "Output directory for transcripts")
   .action(benchCommand);
+
+program
+  .command("plan")
+  .description("Dry-run: preview what briefed will produce, estimated token costs, and features")
+  .option("--repo <path>", "Repository root path", ".")
+  .action(planCommand);
 
 program
   .command("unhook")
