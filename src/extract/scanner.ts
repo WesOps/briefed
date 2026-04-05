@@ -1,6 +1,7 @@
 import { readdirSync, statSync, readFileSync, existsSync } from "fs";
 import { join, relative, extname } from "path";
 import { PARSEABLE_EXTENSIONS, SKIP_DIRS } from "../utils/detect.js";
+import { debug } from "../utils/log.js";
 
 export interface DiscoveredFile {
   path: string;       // relative to root
@@ -35,8 +36,9 @@ export function scanFiles(root: string): ScanResult {
     let entries;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return; // Permission denied or other error
+    } catch (e) {
+      debug(`cannot read directory ${dir}: ${(e as Error).message}`);
+      return;
     }
 
     for (const entry of entries) {
@@ -56,7 +58,8 @@ export function scanFiles(root: string): ScanResult {
         let size: number;
         try {
           size = statSync(fullPath).size;
-        } catch {
+        } catch (e) {
+          debug(`cannot stat ${fullPath}: ${(e as Error).message}`);
           continue;
         }
 

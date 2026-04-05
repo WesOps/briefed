@@ -1,4 +1,4 @@
-import { dirname, basename, relative } from "path";
+import { dirname, basename } from "path";
 import type { FileExtraction, Symbol } from "../extract/signatures.js";
 import type { DepGraph } from "../extract/depgraph.js";
 import type { ComplexityScore } from "../extract/complexity.js";
@@ -62,7 +62,6 @@ export function generateSkeleton(
   const lines: string[] = [];
 
   // Header
-  const projectName = basename(extractions[0]?.path?.split("/")[0] || "project");
   lines.push(`# briefed: ${stack.frameworks.length > 0 ? stack.frameworks.join(", ") : stack.languages.join(", ")} project`);
   lines.push(`Stack: ${[...stack.languages, ...stack.frameworks].join(", ")}${stack.dbORM ? `, ${stack.dbORM}` : ""}`);
   if (stack.entryPoints.length > 0) {
@@ -77,7 +76,7 @@ export function generateSkeleton(
   let tokenCount = countTokens(lines.join("\n"));
   let filesIncluded = 0;
 
-  for (const { dir, files, totalFiles } of sortedDirs) {
+  for (const { dir, files } of sortedDirs) {
     if (filesIncluded >= options.topN) break;
     if (tokenCount >= options.maxTokens) break;
 

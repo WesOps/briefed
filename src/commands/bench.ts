@@ -1,5 +1,5 @@
 import { resolve, join } from "path";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { writeFileSync, existsSync } from "fs";
 import { runBenchmark, generateReport } from "../bench/runner.js";
 
 interface BenchOptions {

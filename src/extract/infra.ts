@@ -99,12 +99,6 @@ export function extractInfra(root: string): InfraInfo {
 }
 
 function parseDockerCompose(content: string, source: string, info: InfraInfo) {
-  // Simple YAML parsing for services
-  const serviceRegex = /^\s{2}(\w[\w-]*)\s*:\s*$/gm;
-  const imageRegex = /image:\s*['"]?([^\s'"]+)/g;
-  const portRegex = /['"]?(\d+):(\d+)['"]?/g;
-  const volumeRegex = /volumes:\s*\n((?:\s+-\s+.+\n)*)/g;
-
   let currentService = "";
   for (const line of content.split("\n")) {
     const svcMatch = line.match(/^  (\w[\w-]*):\s*$/);

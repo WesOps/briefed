@@ -5,6 +5,8 @@ import { initCommand } from "./commands/init.js";
 import { statsCommand } from "./commands/stats.js";
 import { benchCommand } from "./commands/bench.js";
 import { doctorCommand } from "./commands/doctor.js";
+import { removeGitHook } from "./deliver/git-hook.js";
+import { resolve } from "path";
 
 const program = new Command();
 
@@ -48,5 +50,15 @@ program
   .option("--report-only", "Just generate report from existing transcripts")
   .option("--output <dir>", "Output directory for transcripts")
   .action(benchCommand);
+
+program
+  .command("unhook")
+  .description("Remove briefed's git post-commit hook")
+  .option("--repo <path>", "Repository root path", ".")
+  .action((opts: { repo: string }) => {
+    const root = resolve(opts.repo);
+    removeGitHook(root);
+    console.log("  Removed briefed git hook.");
+  });
 
 program.parse();

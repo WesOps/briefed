@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "fs";
+import { readFileSync } from "fs";
 import { join } from "path";
 import { glob } from "glob";
 
@@ -115,7 +115,6 @@ function parseDrizzle(content: string, source: string): SchemaModel[] {
   const tableRegex = /(?:export\s+const\s+)?(\w+)\s*=\s*(?:pgTable|mysqlTable|sqliteTable)\s*\(\s*['"](\w+)['"]\s*,\s*\{([\s\S]*?)\}\s*\)/g;
 
   for (const match of content.matchAll(tableRegex)) {
-    const varName = match[1];
     const tableName = match[2];
     const body = match[3];
     const fields: SchemaField[] = [];

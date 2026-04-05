@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSync } from "fs";
 import { join } from "path";
 import { execSync } from "child_process";
 
@@ -103,7 +103,6 @@ export function removeGitHook(root: string) {
   const remaining = filtered.join("\n").trim();
   if (remaining === "#!/bin/sh" || !remaining) {
     // Hook is now empty — remove it
-    const { unlinkSync } = require("fs");
     unlinkSync(hookPath);
   } else {
     writeFileSync(hookPath, remaining + "\n");

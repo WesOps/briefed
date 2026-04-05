@@ -1,5 +1,5 @@
 import { resolve, join } from "path";
-import { existsSync, readFileSync, readdirSync, statSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import { countTokens, formatTokens } from "../utils/tokens.js";
 import { checkStaleness, formatStaleness } from "../extract/staleness.js";
 

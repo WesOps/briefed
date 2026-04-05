@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
+import { join } from "path";
+import { debug } from "../utils/log.js";
 
 interface ClaudeSettings {
   hooks?: Record<string, Array<{
@@ -35,7 +36,8 @@ export function installHooks(root: string) {
       settings = JSON.parse(raw);
       // Backup before modifying
       writeFileSync(settingsPath + ".briefed-backup", raw);
-    } catch {
+    } catch (e) {
+      debug(`failed to parse settings.json, starting fresh: ${(e as Error).message}`);
       settings = {};
     }
   }
