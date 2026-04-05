@@ -18,7 +18,7 @@ export function extractEvents(root: string): EventContract[] {
 
   const sourceFiles = glob.sync("**/*.{ts,tsx,js,jsx,py}", {
     cwd: root,
-    ignore: ["node_modules/**", "dist/**", "venv/**", ".venv/**", "*.test.*", "*.spec.*", "test/**", "**/*test*/**", "**/*spec*/**"],
+    ignore: ["node_modules/**", "dist/**", "venv/**", ".venv/**", "**/*.test.*", "**/*.spec.*", "test/**", "**/*test*/**", "**/*spec*/**"],
   });
 
   for (const f of sourceFiles) {

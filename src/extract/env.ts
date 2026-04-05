@@ -31,7 +31,7 @@ export function extractEnvVars(root: string): EnvVar[] {
   // 2. Scan source files for process.env / os.environ references
   const sourceFiles = glob.sync("**/*.{ts,tsx,js,jsx,py}", {
     cwd: root,
-    ignore: ["node_modules/**", "dist/**", "venv/**", ".venv/**", "test/**", "*.test.*"],
+    ignore: ["node_modules/**", "dist/**", "venv/**", ".venv/**", "test/**", "**/*.test.*", "**/*.spec.*"],
   });
 
   for (const f of sourceFiles) {
@@ -108,6 +108,8 @@ function addVar(vars: Map<string, EnvVar>, name: string, source: string, hasDefa
   if (vars.has(name)) return; // .env.example takes precedence
   // Skip common Node/system vars
   if (["NODE_ENV", "PATH", "HOME", "USER", "PWD", "SHELL", "TERM"].includes(name)) return;
+  // Skip placeholder/example names and very short names (likely from comments or docs)
+  if (name.length <= 2 || /^(VAR|VAR_NAME|MY_VAR|EXAMPLE|FOO|BAR|BAZ|KEY|VALUE|NAME|TEST)$/i.test(name)) return;
 
   vars.set(name, {
     name,

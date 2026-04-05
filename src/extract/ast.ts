@@ -36,9 +36,14 @@ export function extractWithAst(filePath: string): FileExtraction | null {
   }
 
   function getJsDoc(node: ts.Node): string | null {
+    // Only accept JSDoc that's directly attached to this node (not a nearby node)
+    const nodeStart = node.getFullStart();
     const jsDocs = ts.getJSDocCommentsAndTags(node);
     for (const doc of jsDocs) {
       if (ts.isJSDoc(doc) && doc.comment) {
+        // Verify the JSDoc is within this node's trivia (not from a sibling)
+        const docEnd = doc.getEnd();
+        if (docEnd > nodeStart + node.getFullWidth()) continue;
         const text = typeof doc.comment === "string" ? doc.comment : doc.comment.map((c) => c.text || "").join("");
         const first = text.split("\n")[0].trim();
         if (first.length > 5 && first.length < 200) return first;

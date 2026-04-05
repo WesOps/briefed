@@ -15,7 +15,7 @@ export function extractJobs(root: string): BackgroundJob[] {
 
   const sourceFiles = glob.sync("**/*.{ts,tsx,js,jsx}", {
     cwd: root,
-    ignore: ["node_modules/**", "dist/**", "test/**", "*.test.*", "*.spec.*"],
+    ignore: ["node_modules/**", "dist/**", "test/**", "**/*.test.*", "**/*.spec.*"],
   });
 
   for (const f of sourceFiles) {

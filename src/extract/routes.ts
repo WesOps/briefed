@@ -49,7 +49,7 @@ export function extractRoutes(root: string): Route[] {
   // Express / Fastify routes
   const jsFiles = glob.sync("**/*.{ts,js}", {
     cwd: root,
-    ignore: ["node_modules/**", "dist/**", "test/**", "*.test.*", "*.spec.*"],
+    ignore: ["node_modules/**", "dist/**", "test/**", "**/*.test.*", "**/*.spec.*"],
   });
 
   for (const f of jsFiles) {

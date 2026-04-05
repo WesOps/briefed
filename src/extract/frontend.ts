@@ -136,7 +136,7 @@ function extractComponents(root: string): ComponentInfo[] {
 
   const componentFiles = glob.sync("{src/components,components,src/ui,app/components}/**/*.{tsx,jsx,vue,svelte}", {
     cwd: root,
-    ignore: ["node_modules/**", "*.test.*", "*.spec.*", "*.stories.*"],
+    ignore: ["node_modules/**", "**/*.test.*", "**/*.spec.*", "**/*.stories.*"],
   });
 
   for (const f of componentFiles.slice(0, 50)) { // limit to 50
