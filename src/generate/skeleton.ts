@@ -27,6 +27,11 @@ export function generateSkeleton(
   complexity: ComplexityScore[],
   opts: Partial<SkeletonOptions> = {}
 ): string {
+  // Build file→caller count map from depGraph inEdges
+  const fileCallerCount = new Map<string, number>();
+  for (const [path, node] of depGraph.nodes) {
+    fileCallerCount.set(path, node.inEdges.length);
+  }
   const options = { ...DEFAULT_OPTIONS, ...opts };
 
   // Rank files by PageRank score
@@ -94,7 +99,8 @@ export function generateSkeleton(
       if (tokenCount >= options.maxTokens) break;
 
       const fname = basename(extraction.path);
-      const refTag = refs > 0 ? ` ★${refs}` : "";
+      const callers = fileCallerCount.get(extraction.path) || 0;
+      const refTag = callers > 0 ? ` ★${callers}` : "";
 
       // For high-complexity files, show full signatures
       // For low-complexity files, just show the file name with exports

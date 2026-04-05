@@ -25,7 +25,6 @@ interface InitOptions {
 
 export async function initCommand(opts: InitOptions) {
   const root = resolve(opts.repo);
-  const maxTokens = parseInt(opts.maxTokens, 10);
 
   console.log(`briefed init — scanning ${root}`);
   const startTime = Date.now();
@@ -56,6 +55,13 @@ export async function initCommand(opts: InitOptions) {
   const result = runExtractionPipeline(root, scan, stack);
 
   // Step 4: Generate skeleton and enrich it
+  // Auto-scale token budget: small projects get 800, large ones up to 3000
+  // Auto budget: 800 base + 15 tokens per file, capped at 4000
+  // ~20 files → 1100, ~70 files → 1850, ~200 files → 3800
+  const maxTokens = opts.maxTokens === "auto"
+    ? Math.min(4000, Math.max(800, Math.round(800 + scan.totalFiles * 15)))
+    : parseInt(opts.maxTokens, 10);
+
   console.log("  Generating skeleton...");
   const skeleton = generateSkeleton(stack, result.extractions, result.depGraph, result.complexityScores, { maxTokens });
   const skeletonTokens = countTokens(skeleton);

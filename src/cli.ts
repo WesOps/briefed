@@ -22,7 +22,7 @@ program
   .command("init")
   .description("Scan codebase and compile context (skeleton + gotchas + hooks)")
   .option("--repo <path>", "Repository root path", ".")
-  .option("--max-tokens <n>", "Token budget for skeleton", "1000")
+  .option("--max-tokens <n>", "Token budget for skeleton (default: auto-scaled by project size)", "auto")
   .option("--skip-hooks", "Skip hook installation")
   .option("--skip-rules", "Skip .claude/rules/ generation")
   .option("--fast", "Skip Claude-powered deep analysis (static-only, instant)")

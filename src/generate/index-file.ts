@@ -134,11 +134,19 @@ export function writeModuleIndex(root: string, index: ModuleIndex) {
 export function generateSimpleContracts(
   index: ModuleIndex,
   extractions: FileExtraction[],
-  _depGraph: DepGraph,
+  depGraph: DepGraph,
   root: string
 ) {
   const contractsDir = join(root, ".briefed", "contracts");
   if (!existsSync(contractsDir)) mkdirSync(contractsDir, { recursive: true });
+
+  // Build file→module lookup for fast dependency resolution
+  const fileToModule = new Map<string, string>();
+  for (const mod of index.modules) {
+    for (const f of mod.files) {
+      fileToModule.set(f, mod.name);
+    }
+  }
 
   for (const mod of index.modules) {
     const modExtractions = extractions.filter((e) =>
@@ -149,35 +157,21 @@ export function generateSimpleContracts(
       e.symbols.filter((s) => s.exported)
     );
 
-    // Get dependencies (other modules this one imports from)
+    // Use actual depGraph edges for accurate dependency resolution
     const deps = new Set<string>();
-    for (const ext of modExtractions) {
-      for (const imp of ext.imports) {
-        if (imp.isRelative) {
-          // Find which module this import belongs to
-          for (const otherMod of index.modules) {
-            if (otherMod.name === mod.name) continue;
-            if (otherMod.files.some((f) => imp.source.includes(basename(f).replace(/\.[^.]+$/, "")))) {
-              deps.add(otherMod.name);
-            }
-          }
-        }
-      }
-    }
-
-    // Get dependents (other modules that import from this one)
     const dependents = new Set<string>();
-    for (const otherMod of index.modules) {
-      if (otherMod.name === mod.name) continue;
-      const otherExtractions = extractions.filter((e) =>
-        otherMod.files.includes(e.path)
-      );
-      for (const ext of otherExtractions) {
-        for (const imp of ext.imports) {
-          if (imp.isRelative && mod.files.some((f) => imp.source.includes(basename(f).replace(/\.[^.]+$/, "")))) {
-            dependents.add(otherMod.name);
-          }
-        }
+    for (const filePath of mod.files) {
+      const node = depGraph.nodes.get(filePath);
+      if (!node) continue;
+      // outEdges = files this module imports from
+      for (const target of node.outEdges) {
+        const targetMod = fileToModule.get(target);
+        if (targetMod && targetMod !== mod.name) deps.add(targetMod);
+      }
+      // inEdges = files that import from this module
+      for (const source of node.inEdges) {
+        const sourceMod = fileToModule.get(source);
+        if (sourceMod && sourceMod !== mod.name) dependents.add(sourceMod);
       }
     }
 
@@ -187,8 +181,20 @@ export function generateSimpleContracts(
       complexity: mod.complexity,
     };
 
+    // Enriched exports: signature + description + caller count
     if (exports.length > 0) {
-      contract.exports = exports.slice(0, 15).map((s) => s.signature);
+      contract.exports = exports.slice(0, 15).map((s) => {
+        // Count callers from depGraph inEdges for the file containing this symbol
+        const fileNode = depGraph.nodes.get(
+          modExtractions.find((e) => e.symbols.includes(s))?.path || ""
+        );
+        const callerCount = fileNode ? fileNode.inEdges.length : 0;
+
+        let entry = s.signature;
+        if (s.description) entry += ` — ${s.description}`;
+        if (callerCount > 0) entry += ` [${callerCount} callers]`;
+        return entry;
+      });
     }
 
     if (deps.size > 0) {

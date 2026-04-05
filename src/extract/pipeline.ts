@@ -1,4 +1,5 @@
-import { existsSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { createHash } from "crypto";
 import { join } from "path";
 import { debug } from "../utils/log.js";
 import { extractFile } from "./signatures.js";
@@ -71,24 +72,64 @@ export function runExtractionPipeline(
   }
   console.log(`  Found ${scan.totalFiles} source files`);
 
-  // Extract signatures and imports from each file
+  // Load extraction cache (SHA256 content hash → extraction result)
+  const cacheDir = join(root, ".briefed");
+  const cachePath = join(cacheDir, "extract-cache.json");
+  let cache: Record<string, { hash: string; extraction: FileExtraction }> = {};
+  try {
+    if (existsSync(cachePath)) {
+      cache = JSON.parse(readFileSync(cachePath, "utf-8"));
+    }
+  } catch { cache = {}; }
+
+  // Extract signatures and imports from each file (with caching)
   console.log("  Extracting signatures...");
   const extractions: FileExtraction[] = [];
   let extractErrors = 0;
+  let cacheHits = 0;
 
   for (const file of scan.files) {
     try {
+      const content = readFileSync(file.absolutePath, "utf-8");
+      const hash = createHash("sha256").update(content).digest("hex").slice(0, 16);
+
+      // Use cached extraction if file content unchanged
+      const cached = cache[file.path];
+      if (cached && cached.hash === hash) {
+        extractions.push(cached.extraction);
+        cacheHits++;
+        continue;
+      }
+
       const extraction = extractFile(file.absolutePath, root);
       extraction.path = file.path; // use relative path
       extractions.push(extraction);
+
+      // Store in cache
+      cache[file.path] = { hash, extraction };
     } catch (e) {
       extractErrors++;
       debug(`signature extraction failed for ${file.path}: ${(e as Error).message}`);
     }
   }
 
+  // Prune deleted files from cache
+  const currentFiles = new Set(scan.files.map((f) => f.path));
+  for (const key of Object.keys(cache)) {
+    if (!currentFiles.has(key)) delete cache[key];
+  }
+
+  // Save cache
+  try {
+    if (!existsSync(cacheDir)) mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(cachePath, JSON.stringify(cache));
+  } catch (e) {
+    debug(`failed to write extraction cache: ${(e as Error).message}`);
+  }
+
   const totalSymbols = extractions.reduce((s, e) => s + e.symbols.length, 0);
-  console.log(`  Extracted ${totalSymbols} symbols from ${extractions.length} files${extractErrors > 0 ? ` (${extractErrors} errors)` : ""}`);
+  const cacheMsg = cacheHits > 0 ? `, ${cacheHits} cached` : "";
+  console.log(`  Extracted ${totalSymbols} symbols from ${extractions.length} files${cacheMsg}${extractErrors > 0 ? ` (${extractErrors} errors)` : ""}`);
 
   // Build dependency graph
   console.log("  Building dependency graph...");
