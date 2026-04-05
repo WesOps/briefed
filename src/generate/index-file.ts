@@ -1,0 +1,219 @@
+import { dirname, basename } from "path";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { join } from "path";
+import yaml from "js-yaml";
+import type { FileExtraction } from "../extract/signatures.js";
+import type { DepGraph } from "../extract/depgraph.js";
+import type { ComplexityScore } from "../extract/complexity.js";
+
+export interface ModuleEntry {
+  name: string;      // module name (directory-based)
+  dir: string;       // directory path
+  files: string[];   // file paths in this module
+  keywords: string[]; // keywords for prompt matching
+  complexity: number; // average complexity of files
+  file: string;      // contract filename
+}
+
+export interface ModuleIndex {
+  modules: ModuleEntry[];
+  generated: string;
+}
+
+/**
+ * Group files into logical modules and generate an index for prompt matching.
+ * Modules are primarily directory-based with keyword extraction.
+ */
+export function generateModuleIndex(
+  extractions: FileExtraction[],
+  depGraph: DepGraph,
+  complexity: ComplexityScore[],
+  root: string
+): ModuleIndex {
+  // Group files by directory
+  const dirGroups = new Map<string, FileExtraction[]>();
+  for (const ext of extractions) {
+    const dir = dirname(ext.path);
+    if (!dirGroups.has(dir)) dirGroups.set(dir, []);
+    dirGroups.get(dir)!.push(ext);
+  }
+
+  const modules: ModuleEntry[] = [];
+
+  for (const [dir, files] of dirGroups) {
+    if (files.length === 0) continue;
+
+    // Extract keywords from:
+    // 1. Directory name parts
+    // 2. File names
+    // 3. Exported symbol names
+    const keywords = new Set<string>();
+
+    // Directory parts
+    for (const part of dir.split("/")) {
+      if (part && part.length > 2) {
+        keywords.add(part.toLowerCase());
+        // Split camelCase/PascalCase
+        for (const word of splitIdentifier(part)) {
+          if (word.length > 2) keywords.add(word.toLowerCase());
+        }
+      }
+    }
+
+    // File names (without extension)
+    for (const f of files) {
+      const name = basename(f.path).replace(/\.[^.]+$/, "");
+      keywords.add(name.toLowerCase());
+      for (const word of splitIdentifier(name)) {
+        if (word.length > 2) keywords.add(word.toLowerCase());
+      }
+    }
+
+    // Exported symbol names
+    for (const f of files) {
+      for (const sym of f.symbols.filter((s) => s.exported)) {
+        const name = sym.name.split(".").pop()!;
+        keywords.add(name.toLowerCase());
+        for (const word of splitIdentifier(name)) {
+          if (word.length > 2) keywords.add(word.toLowerCase());
+        }
+      }
+    }
+
+    // Remove very common/generic keywords
+    const genericWords = new Set([
+      "src", "lib", "app", "index", "utils", "helpers", "types",
+      "const", "config", "common", "shared", "core", "main",
+    ]);
+    for (const gw of genericWords) keywords.delete(gw);
+
+    // Compute average complexity
+    const fileComplexities = files
+      .map((f) => complexity.find((c) => c.file === f.path)?.score || 0);
+    const avgComplexity = fileComplexities.length > 0
+      ? fileComplexities.reduce((s, v) => s + v, 0) / fileComplexities.length
+      : 0;
+
+    const safeName = dir.replace(/[\/\\]/g, "-").replace(/^-/, "") || "root";
+
+    modules.push({
+      name: safeName,
+      dir,
+      files: files.map((f) => f.path),
+      keywords: [...keywords],
+      complexity: Math.round(avgComplexity * 10) / 10,
+      file: `${safeName}.yaml`,
+    });
+  }
+
+  // Sort by complexity (most complex first — they need context most)
+  modules.sort((a, b) => b.complexity - a.complexity);
+
+  return {
+    modules,
+    generated: new Date().toISOString(),
+  };
+}
+
+/**
+ * Write the module index to .briefed/index.json
+ */
+export function writeModuleIndex(root: string, index: ModuleIndex) {
+  const briefedDir = join(root, ".briefed");
+  if (!existsSync(briefedDir)) mkdirSync(briefedDir, { recursive: true });
+  writeFileSync(
+    join(briefedDir, "index.json"),
+    JSON.stringify(index, null, 2)
+  );
+}
+
+/**
+ * Generate simple contract files for each module (non-LLM version).
+ * Extracts structural info: purpose, exports, deps, complexity.
+ */
+export function generateSimpleContracts(
+  index: ModuleIndex,
+  extractions: FileExtraction[],
+  depGraph: DepGraph,
+  root: string
+) {
+  const contractsDir = join(root, ".briefed", "contracts");
+  if (!existsSync(contractsDir)) mkdirSync(contractsDir, { recursive: true });
+
+  for (const mod of index.modules) {
+    const modExtractions = extractions.filter((e) =>
+      mod.files.includes(e.path)
+    );
+
+    const exports = modExtractions.flatMap((e) =>
+      e.symbols.filter((s) => s.exported)
+    );
+
+    // Get dependencies (other modules this one imports from)
+    const deps = new Set<string>();
+    for (const ext of modExtractions) {
+      for (const imp of ext.imports) {
+        if (imp.isRelative) {
+          // Find which module this import belongs to
+          for (const otherMod of index.modules) {
+            if (otherMod.name === mod.name) continue;
+            if (otherMod.files.some((f) => imp.source.includes(basename(f).replace(/\.[^.]+$/, "")))) {
+              deps.add(otherMod.name);
+            }
+          }
+        }
+      }
+    }
+
+    // Get dependents (other modules that import from this one)
+    const dependents = new Set<string>();
+    for (const otherMod of index.modules) {
+      if (otherMod.name === mod.name) continue;
+      const otherExtractions = extractions.filter((e) =>
+        otherMod.files.includes(e.path)
+      );
+      for (const ext of otherExtractions) {
+        for (const imp of ext.imports) {
+          if (imp.isRelative && mod.files.some((f) => imp.source.includes(basename(f).replace(/\.[^.]+$/, "")))) {
+            dependents.add(otherMod.name);
+          }
+        }
+      }
+    }
+
+    const contract: Record<string, unknown> = {
+      module: mod.dir,
+      files: mod.files.length,
+      complexity: mod.complexity,
+    };
+
+    if (exports.length > 0) {
+      contract.exports = exports.slice(0, 15).map((s) => s.signature);
+    }
+
+    if (deps.size > 0) {
+      contract.dependencies = [...deps];
+    }
+
+    if (dependents.size > 0) {
+      contract.dependents = [...dependents];
+    }
+
+    const yamlContent = yaml.dump(contract, {
+      indent: 2,
+      lineWidth: 120,
+      noRefs: true,
+    });
+
+    writeFileSync(join(contractsDir, mod.file), yamlContent);
+  }
+}
+
+/** Split camelCase/PascalCase/snake_case identifiers into words */
+function splitIdentifier(name: string): string[] {
+  return name
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
+}

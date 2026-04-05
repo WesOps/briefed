@@ -1,0 +1,39 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\Wesley\\briefed\\.briefed\\hooks\\session-start.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\Wesley\\briefed\\.briefed\\hooks\\prompt-submit.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\Wesley\\briefed\\.briefed\\hooks\\post-read.js\"",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  }
+}

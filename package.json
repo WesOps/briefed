@@ -1,0 +1,32 @@
+{
+  "name": "briefed",
+  "version": "0.1.0",
+  "description": "Adaptive Context Engine — compile your codebase into focused, token-efficient context for AI coding tools",
+  "type": "module",
+  "bin": {
+    "briefed": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js",
+    "lint": "tsc --noEmit",
+    "bench": "node dist/cli.js bench"
+  },
+  "keywords": ["ai", "context", "claude", "cursor", "llm", "tree-sitter", "coding"],
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "web-tree-sitter": "^0.24.7",
+    "glob": "^11.0.1",
+    "simple-git": "^3.27.0",
+    "minimatch": "^10.0.1",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.13.0",
+    "typescript": "^5.7.3"
+  }
+}

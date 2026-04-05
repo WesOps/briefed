@@ -1,0 +1,13 @@
+module: src/generate
+files: 3
+complexity: 0
+exports:
+  - ModuleEntry
+  - ModuleIndex
+  - 'writeModuleIndex(root: string, index: ModuleIndex)'
+  - SkeletonOptions
+dependencies:
+  - src-extract
+  - src-utils
+dependents:
+  - src-commands

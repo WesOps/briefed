@@ -1,0 +1,5 @@
+module: src
+files: 1
+complexity: 0
+dependencies:
+  - src-commands

@@ -1,0 +1,9 @@
+module: src/learn
+files: 1
+complexity: 0
+exports:
+  - 'loadStore(root: string): LearningStore'
+  - 'saveStore(root: string, store: LearningStore)'
+  - 'generateLearningHookScript(): string'
+dependents:
+  - src-commands

@@ -1,0 +1,24 @@
+module: src/extract
+files: 19
+complexity: 0
+exports:
+  - ComplexityScore
+  - ProjectConventions
+  - 'formatConventions(conv: ProjectConventions): string'
+  - DepGraph
+  - EnvVar
+  - 'extractEnvVars(root: string): EnvVar[]'
+  - 'formatEnvVars(vars: EnvVar[]): string'
+  - ErrorPattern
+  - PageRoute
+  - ComponentInfo
+  - FrontendInfo
+  - 'extractFrontend(root: string): FrontendInfo'
+  - 'formatFrontend(info: FrontendInfo): string'
+  - Gotcha
+  - 'extractGotchas(filePath: string): Gotcha[]'
+dependencies:
+  - src-utils
+dependents:
+  - src-commands
+  - src-generate

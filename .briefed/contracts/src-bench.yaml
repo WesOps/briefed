@@ -1,0 +1,13 @@
+module: src/bench
+files: 2
+complexity: 0
+exports:
+  - TaskMetrics
+  - 'parseResult(filePath: string): TaskMetrics'
+  - BenchTask
+  - BenchResult
+  - RunOptions
+  - 'runBenchmark(opts: RunOptions): Promise<BenchResult[]>'
+  - 'generateReport(results: BenchResult[]): string'
+dependents:
+  - src-commands
