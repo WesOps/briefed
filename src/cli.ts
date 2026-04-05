@@ -6,6 +6,7 @@ import { statsCommand } from "./commands/stats.js";
 import { benchCommand } from "./commands/bench.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { removeGitHook } from "./deliver/git-hook.js";
+import { startMcpServer } from "./mcp/server.js";
 import { resolve } from "path";
 
 const program = new Command();
@@ -59,6 +60,14 @@ program
     const root = resolve(opts.repo);
     removeGitHook(root);
     console.log("  Removed briefed git hook.");
+  });
+
+program
+  .command("mcp")
+  .description("Start MCP server (blast-radius, schema, routes) for AI tools")
+  .option("--repo <path>", "Repository root path", ".")
+  .action(async (opts: { repo: string }) => {
+    await startMcpServer(opts.repo);
   });
 
 program.parse();

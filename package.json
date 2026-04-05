@@ -44,12 +44,14 @@
     "LICENSE"
   ],
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "commander": "^13.1.0",
     "glob": "^13.0.6",
     "js-yaml": "^4.1.0",
     "minimatch": "^10.0.1",
     "simple-git": "^3.27.0",
-    "web-tree-sitter": "^0.24.7"
+    "web-tree-sitter": "^0.24.7",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

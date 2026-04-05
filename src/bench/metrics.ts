@@ -14,6 +14,9 @@ export interface TaskMetrics {
   resultLength: number;
   sessionId: string;
   success: boolean;
+  fileReads: number;      // how many Read tool calls (orientation cost)
+  fileEdits: number;      // how many Edit/Write tool calls (actual work)
+  uniqueFilesRead: number; // unique files read (deduped)
 }
 
 /**
@@ -50,6 +53,35 @@ export function parseResult(filePath: string): TaskMetrics {
   const num = (v: unknown): number => (typeof v === "number" ? v : 0);
   const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
+  // Count tool calls from JSONL lines (each line may be a tool_use message)
+  let fileReads = 0;
+  let fileEdits = 0;
+  const filesRead = new Set<string>();
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line);
+      // Check for tool_use in content blocks
+      const contents = Array.isArray(entry.content) ? entry.content : [];
+      for (const block of contents) {
+        if (block.type === "tool_use") {
+          if (block.name === "Read") {
+            fileReads++;
+            if (block.input?.file_path) filesRead.add(block.input.file_path);
+          } else if (block.name === "Edit" || block.name === "Write") {
+            fileEdits++;
+          }
+        }
+      }
+      // Also check tool_name at top level (some formats)
+      if (entry.tool_name === "Read") {
+        fileReads++;
+        if (entry.tool_input?.file_path) filesRead.add(entry.tool_input.file_path);
+      } else if (entry.tool_name === "Edit" || entry.tool_name === "Write") {
+        fileEdits++;
+      }
+    } catch { /* skip non-JSON lines */ }
+  }
+
   return {
     durationMs: num(data.duration_ms),
     numTurns: num(data.num_turns),
@@ -61,6 +93,9 @@ export function parseResult(filePath: string): TaskMetrics {
     resultLength: str(data.result).length,
     sessionId: str(data.session_id),
     success: data.subtype === "success" && !data.is_error,
+    fileReads,
+    fileEdits,
+    uniqueFilesRead: filesRead.size,
   };
 }
 
@@ -141,6 +176,40 @@ export function compareMetrics(
       `$${withCctx.totalCostUsd.toFixed(4)}`,
       formatDelta(without.totalCostUsd, withCctx.totalCostUsd)
     )
+  );
+
+  lines.push(
+    padRow(
+      "File reads",
+      without.fileReads.toString(),
+      withCctx.fileReads.toString(),
+      formatDelta(without.fileReads, withCctx.fileReads)
+    )
+  );
+
+  lines.push(
+    padRow(
+      "Unique files read",
+      without.uniqueFilesRead.toString(),
+      withCctx.uniqueFilesRead.toString(),
+      formatDelta(without.uniqueFilesRead, withCctx.uniqueFilesRead)
+    )
+  );
+
+  lines.push(
+    padRow(
+      "File edits",
+      without.fileEdits.toString(),
+      withCctx.fileEdits.toString(),
+      formatDelta(without.fileEdits, withCctx.fileEdits, true)
+    )
+  );
+
+  // Efficiency ratio: edits per read (higher = less orientation overhead)
+  const effWithout = without.fileReads > 0 ? (without.fileEdits / without.fileReads).toFixed(2) : "—";
+  const effWith = withCctx.fileReads > 0 ? (withCctx.fileEdits / withCctx.fileReads).toFixed(2) : "—";
+  lines.push(
+    padRow("Edit/Read ratio", effWithout, effWith, "")
   );
 
   lines.push("  " + "─".repeat(62));

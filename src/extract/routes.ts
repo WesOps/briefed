@@ -12,7 +12,8 @@ export interface Route {
 
 /**
  * Extract API routes from the codebase.
- * Supports: Express, Fastify, Next.js App Router, Next.js Pages API, FastAPI, Django, Hono.
+ * Supports: Express, Fastify, Hono, Next.js, Remix, SvelteKit, FastAPI, Flask, Django,
+ * Gin, Echo, Fiber, Chi, Rails, Actix-web, Axum.
  */
 export function extractRoutes(root: string): Route[] {
   const routes: Route[] = [];
@@ -102,10 +103,44 @@ export function extractRoutes(root: string): Route[] {
     }
   }
 
-  // FastAPI (Python)
+  // Remix loader/action (app/routes/**/*.ts)
+  const remixRoutes = glob.sync("app/routes/**/*.{ts,tsx,js,jsx}", {
+    cwd: root,
+    ignore: ["node_modules/**"],
+  });
+  for (const f of remixRoutes) {
+    const content = readFileSync(join(root, f), "utf-8");
+    const routePath = "/" + f.replace(/^app\/routes\//, "").replace(/\.\w+$/, "")
+      .replace(/\$/g, ":").replace(/\./g, "/").replace(/_index$/, "").replace(/\(.*?\)\//g, "");
+    if (content.match(/export\s+(?:async\s+)?function\s+loader/)) {
+      routes.push({ method: "GET", path: routePath, handler: "loader", file: f, middleware: [] });
+    }
+    if (content.match(/export\s+(?:async\s+)?function\s+action/)) {
+      routes.push({ method: "POST", path: routePath, handler: "action", file: f, middleware: [] });
+    }
+  }
+
+  // SvelteKit (+server.ts / +page.server.ts)
+  const svelteRoutes = glob.sync("src/routes/**/{+server,+page.server}.{ts,js}", {
+    cwd: root,
+    ignore: ["node_modules/**"],
+  });
+  for (const f of svelteRoutes) {
+    const content = readFileSync(join(root, f), "utf-8");
+    const routePath = "/" + f.replace(/^src\/routes\//, "").replace(/\/\+(?:server|page\.server)\.\w+$/, "")
+      .replace(/\[([^\]]+)\]/g, ":$1").replace(/\(.*?\)\//g, "");
+    for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE"]) {
+      if (content.includes(`export async function ${method}`) || content.includes(`export function ${method}`) ||
+          content.includes(`export const ${method}`)) {
+        routes.push({ method, path: routePath, handler: method, file: f, middleware: [] });
+      }
+    }
+  }
+
+  // FastAPI / Flask / Django (Python)
   const pyFiles = glob.sync("**/*.py", {
     cwd: root,
-    ignore: ["venv/**", ".venv/**", "__pycache__/**"],
+    ignore: ["venv/**", ".venv/**", "__pycache__/**", "migrations/**"],
   });
 
   for (const f of pyFiles) {
@@ -119,25 +154,119 @@ export function extractRoutes(root: string): Route[] {
     // FastAPI: @app.get("/path") or @router.post("/path")
     const fastapiRegex = /@(?:app|router)\.(get|post|put|patch|delete)\s*\(\s*['"]([^'"]+)['"]/gi;
     for (const match of content.matchAll(fastapiRegex)) {
-      routes.push({
-        method: match[1].toUpperCase(),
-        path: match[2],
-        handler: f,
-        file: f,
-        middleware: [],
-      });
+      routes.push({ method: match[1].toUpperCase(), path: match[2], handler: f, file: f, middleware: [] });
+    }
+
+    // Flask: @app.route("/path", methods=["GET"])
+    const flaskRegex = /@(?:app|bp|blueprint)\.route\s*\(\s*['"]([^'"]+)['"](?:\s*,\s*methods\s*=\s*\[([^\]]+)\])?\s*\)/gi;
+    for (const match of content.matchAll(flaskRegex)) {
+      const methods = match[2] ? match[2].replace(/['"]/g, "").split(",").map((m) => m.trim().toUpperCase()) : ["GET"];
+      for (const m of methods) {
+        routes.push({ method: m, path: match[1], handler: f, file: f, middleware: [] });
+      }
     }
 
     // Django: path('url', view)
     const djangoRegex = /path\s*\(\s*['"]([^'"]*)['"]\s*,\s*(\w+)/g;
     for (const match of content.matchAll(djangoRegex)) {
-      routes.push({
-        method: "ALL",
-        path: "/" + match[1],
-        handler: match[2],
-        file: f,
-        middleware: [],
-      });
+      routes.push({ method: "ALL", path: "/" + match[1], handler: match[2], file: f, middleware: [] });
+    }
+  }
+
+  // Go (Gin, Echo, Fiber, Chi)
+  const goFiles = glob.sync("**/*.go", {
+    cwd: root,
+    ignore: ["vendor/**"],
+  });
+
+  for (const f of goFiles) {
+    let content: string;
+    try {
+      content = readFileSync(join(root, f), "utf-8");
+    } catch {
+      continue;
+    }
+
+    // Gin: r.GET("/path", handler) or group.POST("/path", handler)
+    const ginRegex = /\w+\.(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s*\(\s*"([^"]+)"/g;
+    for (const match of content.matchAll(ginRegex)) {
+      routes.push({ method: match[1], path: match[2], handler: f, file: f, middleware: [] });
+    }
+
+    // Echo: e.GET("/path", handler)
+    const echoRegex = /\w+\.(GET|POST|PUT|PATCH|DELETE)\s*\(\s*"([^"]+)"/g;
+    if (content.includes('"github.com/labstack/echo')) {
+      for (const match of content.matchAll(echoRegex)) {
+        if (!routes.some((r) => r.method === match[1] && r.path === match[2] && r.file === f)) {
+          routes.push({ method: match[1], path: match[2], handler: f, file: f, middleware: [] });
+        }
+      }
+    }
+
+    // Fiber: app.Get("/path", handler)
+    const fiberRegex = /\w+\.(Get|Post|Put|Patch|Delete)\s*\(\s*"([^"]+)"/g;
+    if (content.includes('"github.com/gofiber/fiber')) {
+      for (const match of content.matchAll(fiberRegex)) {
+        routes.push({ method: match[1].toUpperCase(), path: match[2], handler: f, file: f, middleware: [] });
+      }
+    }
+
+    // Chi: r.Get("/path", handler) or r.Route("/prefix", func)
+    const chiRegex = /\w+\.(Get|Post|Put|Patch|Delete|Head|Options)\s*\(\s*"([^"]+)"/g;
+    if (content.includes('"github.com/go-chi/chi')) {
+      for (const match of content.matchAll(chiRegex)) {
+        if (!routes.some((r) => r.method === match[1].toUpperCase() && r.path === match[2] && r.file === f)) {
+          routes.push({ method: match[1].toUpperCase(), path: match[2], handler: f, file: f, middleware: [] });
+        }
+      }
+    }
+  }
+
+  // Ruby (Rails routes.rb)
+  const railsRoutesFile = glob.sync("config/routes.rb", { cwd: root });
+  if (railsRoutesFile.length > 0) {
+    try {
+      const content = readFileSync(join(root, railsRoutesFile[0]), "utf-8");
+      // get '/path', to: 'controller#action'
+      const railsRegex = /(get|post|put|patch|delete)\s+['"]([^'"]+)['"]/gi;
+      for (const match of content.matchAll(railsRegex)) {
+        routes.push({ method: match[1].toUpperCase(), path: match[2], handler: railsRoutesFile[0], file: railsRoutesFile[0], middleware: [] });
+      }
+      // resources :users (generates RESTful routes)
+      const resourcesRegex = /resources?\s+:(\w+)/g;
+      for (const match of content.matchAll(resourcesRegex)) {
+        const base = "/" + match[1];
+        for (const m of ["GET", "POST", "PUT", "DELETE"]) {
+          routes.push({ method: m, path: base, handler: `${match[1]}#resource`, file: railsRoutesFile[0], middleware: [] });
+        }
+      }
+    } catch { /* skip */ }
+  }
+
+  // Rust (Actix-web, Axum)
+  const rsFiles = glob.sync("**/*.rs", {
+    cwd: root,
+    ignore: ["target/**"],
+  });
+
+  for (const f of rsFiles) {
+    let content: string;
+    try {
+      content = readFileSync(join(root, f), "utf-8");
+    } catch {
+      continue;
+    }
+
+    // Actix: #[get("/path")] or web::resource("/path").route(web::get())
+    const actixRegex = /#\[(get|post|put|patch|delete)\s*\(\s*"([^"]+)"\s*\)\]/gi;
+    for (const match of content.matchAll(actixRegex)) {
+      routes.push({ method: match[1].toUpperCase(), path: match[2], handler: f, file: f, middleware: [] });
+    }
+
+    // Axum: .route("/path", get(handler))
+    const axumRegex = /\.route\s*\(\s*"([^"]+)"\s*,\s*(get|post|put|patch|delete)\s*\(/gi;
+    for (const match of content.matchAll(axumRegex)) {
+      routes.push({ method: match[2].toUpperCase(), path: match[1], handler: f, file: f, middleware: [] });
     }
   }
 

@@ -113,6 +113,8 @@ export async function initCommand(opts: InitOptions) {
   console.log(`    CLAUDE.md            — skeleton + conventions (~${formatTokens(countTokens(enrichedSkeleton))} tokens)`);
   console.log(`    .cursorrules         — Cursor IDE context`);
   console.log(`    AGENTS.md            — cross-tool context`);
+  console.log(`    .github/copilot-instructions.md — GitHub Copilot context`);
+  console.log(`    codex.md             — OpenAI Codex CLI context`);
   console.log(`    .claude/rules/       — gotchas (${result.gotchas.length} constraints, path-scoped)`);
   console.log(`    .briefed/contracts/     — module contracts (${moduleIndex.modules.length} modules)`);
   console.log(`    .briefed/test-map.json  — test mappings (${result.testMappings.length} pairs, ${result.testMappings.reduce((s, t) => s + t.testCount, 0)} tests)`);
