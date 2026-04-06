@@ -36,6 +36,10 @@ export function detectCycles(depGraph: DepGraph): string[][] {
         continue;
       }
       const child = node.outEdges[frame.childIdx++];
+      // Skip type-only edges: they're erased at runtime and don't form
+      // real coupling cycles. If runtimeOutEdges is undefined (older
+      // graph), fall back to treating every edge as runtime.
+      if (node.runtimeOutEdges && !node.runtimeOutEdges.has(child)) continue;
       const c = color.get(child) ?? WHITE;
       if (c === GRAY) {
         // Cycle: extract from where the child appears in path

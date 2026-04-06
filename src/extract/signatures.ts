@@ -36,6 +36,8 @@ export interface ImportRef {
   source: string;   // the module path (e.g. "./InvoiceService" or "react")
   names: string[];  // imported names (e.g. ["InvoiceService", "InvoiceStatus"])
   isRelative: boolean;
+  /** True for `import type { ... }` — erased at runtime, doesn't create real coupling. */
+  isTypeOnly?: boolean;
 }
 
 export interface FileExtraction {
@@ -190,7 +192,7 @@ function extractTypeScript(content: string, lines: string[], result: FileExtract
 
   for (const match of content.matchAll(importTypeRegex)) {
     const names = match[1].split(",").map((n) => n.trim().split(/\s+as\s+/).pop()!.trim()).filter(Boolean);
-    result.imports.push({ source: match[2], names, isRelative: match[2].startsWith(".") });
+    result.imports.push({ source: match[2], names, isRelative: match[2].startsWith("."), isTypeOnly: true });
   }
 
   for (const match of content.matchAll(requireRegex)) {

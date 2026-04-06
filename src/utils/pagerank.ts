@@ -9,6 +9,8 @@ export interface GraphNode {
   inEdges: string[];  // files that import this node
   /** Edge weights: target file → number of symbols imported (higher = stronger coupling) */
   edgeWeights?: Map<string, number>;
+  /** Subset of outEdges where at least one import is runtime (non-type-only). */
+  runtimeOutEdges?: Set<string>;
 }
 
 /**

@@ -37,6 +37,7 @@ export function buildDepGraph(
   for (const ext of extractions) {
     const node = nodes.get(ext.path)!;
     if (!node.edgeWeights) node.edgeWeights = new Map();
+    if (!node.runtimeOutEdges) node.runtimeOutEdges = new Set();
 
     for (const imp of ext.imports) {
       if (!imp.isRelative) continue; // skip external packages
@@ -49,6 +50,10 @@ export function buildDepGraph(
         // Track edge weight: number of symbols imported
         const symbolCount = Math.max(imp.names.length, 1);
         node.edgeWeights.set(resolved, (node.edgeWeights.get(resolved) || 0) + symbolCount);
+        // Mark runtime if at least one import statement on this edge isn't type-only
+        if (!imp.isTypeOnly) {
+          node.runtimeOutEdges.add(resolved);
+        }
 
         const targetNode = nodes.get(resolved)!;
         if (!targetNode.inEdges.includes(ext.path)) {

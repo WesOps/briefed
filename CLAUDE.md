@@ -13,7 +13,7 @@ signatures.ts ★12
   | "type"
   | "enu...
   interface ImportRef — Import reference found in a file.
-  interface FileExtraction — Import reference found in a file. [11 callers]
+  interface FileExtraction — True for `import type { ... }` — erased at runtime, doesn't create real coupl... [11 callers]
   extractFile(filePath: string, _rootPath: string): FileExtraction — Extract symbols and imports from a source file. [3 callers]
 ast.ts ★2: extractWithAst — AST-based extraction for TypeScript/JavaScript files using the TS compiler API.
 depgraph.ts ★8
@@ -97,10 +97,7 @@ tokens.ts ★6
   formatBytes(bytes: number): string — Format byte count for display
 pagerank.test.ts: 
 
-## src/mcp/ (8 files)
-cached-loader.ts ★3
-
-<!-- briefed skeleton: 33 files, ~1790 tokens -->
+<!-- briefed skeleton: 32 files, ~1792 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
 Tests: 15 source files have matching test files
 Error handling:
@@ -147,6 +144,4 @@ Hot files (last 90d, touch carefully):
   - src/extract/env.ts (6 commits, 2 authors)
   - src/extract/frontend.ts (6 commits, 2 authors)
   - src/extract/routes.ts (6 commits, 2 authors)
-Import cycles: 1 detected (refactor footgun)
-  - src/extract/ast.ts → src/extract/signatures.ts → src/extract/ast.ts
 <!-- briefed:end -->

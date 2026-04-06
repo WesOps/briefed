@@ -138,7 +138,11 @@ export function extractWithAst(filePath: string): FileExtraction | null {
       }
 
       const isRelative = source.startsWith(".");
-      imports.push({ source, names, isRelative });
+      // Whole-clause `import type { ... }` is erased at runtime.
+      // Mixed `import { type Foo, RuntimeBar }` still has runtime coupling,
+      // so we conservatively treat it as runtime.
+      const isTypeOnly = node.importClause?.isTypeOnly === true;
+      imports.push({ source, names, isRelative, isTypeOnly });
       if (isRelative) {
         for (const n of names) importedNames.add(n);
       }
