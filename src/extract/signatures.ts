@@ -78,7 +78,12 @@ export function extractFile(filePath: string, _rootPath: string): FileExtraction
   // Try AST extraction first for TS/JS files (higher accuracy)
   if (AST_EXTENSIONS.has(ext)) {
     const astResult = extractWithAst(filePath);
-    if (astResult && astResult.symbols.length > 0) {
+    // Trust AST if it succeeded at all (returned non-null). Even if symbols
+    // is empty (e.g. a test file with only describe/it calls, no top-level
+    // exports), the imports array is still authoritative. Falling back to
+    // regex here causes regex to scan string literals inside the file and
+    // pick up bogus imports like `"import dep from 'dep'"` from test fixtures.
+    if (astResult) {
       // AST succeeded — still add JSDoc descriptions via line scanning
       const content = readFileSync(filePath, "utf-8");
       const lines = content.split("\n");
@@ -89,7 +94,7 @@ export function extractFile(filePath: string, _rootPath: string): FileExtraction
       }
       return astResult;
     }
-    // AST returned nothing — fall through to regex
+    // AST genuinely failed (parse error) — fall through to regex
   }
 
   // Regex fallback (always works, lower accuracy)

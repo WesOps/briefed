@@ -72,7 +72,6 @@ complexity.test.ts:
 deep.test.ts: 
 depgraph.test.ts: 
 deps.test.ts: 
-routes.test.ts: GET
 staleness.test.ts: 
 
 ## src/utils/ (7 files)
@@ -103,7 +102,9 @@ server.ts ★1: startMcpServer
 blast-radius.test.ts: 
 find-usages.test.ts: 
 
-<!-- briefed skeleton: 38 files, ~1742 tokens -->
+## src/bench/ (3 files)
+
+<!-- briefed skeleton: 37 files, ~1744 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
 Tests: 19 source files have matching test files
 Commands:
@@ -112,16 +113,12 @@ Commands:
   test: vitest run
   lint: tsc --noEmit
   start: node dist/cli.js
-Required env: config: BRIEFED_DEBUG, USERPROFILE, APPDATA
 External deps:
   - vitest@4.1.2 — 20 imports
   - @modelcontextprotocol/sdk@1.29.0 — 6 imports
   - glob@13.0.6 — 5 imports
-  - express@5.2.1 — 2 imports
   - commander@13.1.0 — 1 imports
   - typescript@5.9.3 — 1 imports
-  - next-auth — 1 imports
-  - dep — 1 imports
   - js-yaml@4.1.1 — 1 imports
   - zod@4.3.6 — 1 imports
 <!-- briefed:end -->

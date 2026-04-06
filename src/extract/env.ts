@@ -104,10 +104,26 @@ function parseEnvFile(content: string, source: string, vars: Map<string, EnvVar>
   }
 }
 
+// System/OS vars that aren't project configuration — code reads them for
+// platform-specific behavior, but they aren't things a developer needs to set.
+const SYSTEM_ENV_VARS = new Set([
+  "NODE_ENV", "PATH", "HOME", "USER", "PWD", "SHELL", "TERM",
+  // Windows user/profile paths
+  "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH",
+  "PROGRAMFILES", "PROGRAMDATA", "COMSPEC", "SYSTEMROOT", "TEMP", "TMP",
+  // XDG base dir spec
+  "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR",
+  // Common debug/CI flags
+  "DEBUG", "CI", "FORCE_COLOR", "NO_COLOR", "COLORTERM", "LANG", "LC_ALL",
+  "GITHUB_ACTIONS", "GITHUB_TOKEN", "GITLAB_CI",
+]);
+
 function addVar(vars: Map<string, EnvVar>, name: string, source: string, hasDefault: boolean) {
   if (vars.has(name)) return; // .env.example takes precedence
-  // Skip common Node/system vars
-  if (["NODE_ENV", "PATH", "HOME", "USER", "PWD", "SHELL", "TERM"].includes(name)) return;
+  // Skip common Node/system/OS vars
+  if (SYSTEM_ENV_VARS.has(name)) return;
+  // Skip tool-specific debug flags (e.g. BRIEFED_DEBUG, MYAPP_DEBUG)
+  if (/_DEBUG$/.test(name)) return;
   // Skip placeholder/example names and very short names (likely from comments or docs)
   if (name.length <= 2 || /^(VAR|VAR_NAME|MY_VAR|EXAMPLE|FOO|BAR|BAZ|KEY|VALUE|NAME|TEST)$/i.test(name)) return;
 
@@ -115,7 +131,10 @@ function addVar(vars: Map<string, EnvVar>, name: string, source: string, hasDefa
     name,
     source,
     hasDefault,
-    required: !hasDefault,
+    // Only vars declared in .env.example (or similar) without a default are
+    // "required." Source-scanned references are just usage — we don't know
+    // if they have a fallback, default, or are entirely optional.
+    required: false,
     description: null,
     category: categorizeEnvVar(name),
   });
