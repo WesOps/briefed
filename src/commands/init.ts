@@ -16,6 +16,7 @@ import { formatInfra } from "../extract/infra.js";
 import { formatRouteCalls } from "../extract/cross-layer.js";
 import { formatChurn } from "../extract/churn.js";
 import { formatCycles } from "../extract/cycles.js";
+import { formatDeps } from "../extract/deps.js";
 import { writeOutputs } from "../deliver/output.js";
 import { countTokens, formatTokens } from "../utils/tokens.js";
 
@@ -112,6 +113,8 @@ export async function initCommand(opts: InitOptions) {
   if (churnText) enrichedSkeleton += "\n" + churnText;
   const cyclesText = formatCycles(result.cycles);
   if (cyclesText) enrichedSkeleton += "\n" + cyclesText;
+  const depsText = formatDeps(result.deps);
+  if (depsText) enrichedSkeleton += "\n" + depsText;
 
   // Step 7: Write all outputs
   const outputSummary = writeOutputs(root, result, enrichedSkeleton, convText, {
