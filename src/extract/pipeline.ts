@@ -172,9 +172,12 @@ export function runExtractionPipeline(
   console.log(`  Average complexity: ${avgComplexity.toFixed(1)}/10`);
 
   // Extract gotchas
+  // Skip test files: their fixture strings (e.g. `// TODO: ...` inside a
+  // string literal) match the gotcha regexes and pollute the rule output.
   console.log("  Extracting gotchas...");
   let gotchas: Gotcha[] = [];
   for (const file of scan.files) {
+    if (isTestFile(file.path)) continue;
     try {
       const fileGotchas = extractGotchas(file.absolutePath);
       gotchas = gotchas.concat(fileGotchas);
@@ -328,4 +331,10 @@ export function runExtractionPipeline(
     cycles,
     deps,
   };
+}
+
+function isTestFile(relPath: string): boolean {
+  return /(^|\/)(__tests__|tests?)\//.test(relPath) ||
+    /\.(test|spec)\.[cm]?[jt]sx?$/.test(relPath) ||
+    /_test\.(go|py)$/.test(relPath);
 }

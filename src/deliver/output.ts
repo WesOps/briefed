@@ -1,4 +1,4 @@
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { updateClaudeMd, saveSkeletonFile } from "./claudemd.js";
 import { installHooks, installMcpServer, generateHookScripts } from "./hooks.js";
@@ -115,5 +115,48 @@ export function writeOutputs(
     console.log("  Git hook installed (auto-updates on every commit)");
   }
 
+  // Add briefed's runtime artifacts to .gitignore so they don't get committed
+  // and don't trigger false-positive "context is stale" warnings.
+  updateGitignore(root);
+
   return summary;
+}
+
+const GITIGNORE_MARKER_START = "# briefed:start";
+const GITIGNORE_MARKER_END = "# briefed:end";
+const GITIGNORE_ENTRIES = [
+  ".briefed/extract-cache.json",
+  ".briefed/hooks/",
+  ".claude/settings.json.briefed-backup",
+];
+
+/**
+ * Append briefed's runtime artifacts to .gitignore inside a marked block.
+ * Idempotent: re-running init replaces the existing block instead of appending.
+ */
+function updateGitignore(root: string) {
+  const path = join(root, ".gitignore");
+  const block = [
+    GITIGNORE_MARKER_START,
+    ...GITIGNORE_ENTRIES,
+    GITIGNORE_MARKER_END,
+  ].join("\n");
+
+  let content = "";
+  if (existsSync(path)) {
+    content = readFileSync(path, "utf-8");
+    const startIdx = content.indexOf(GITIGNORE_MARKER_START);
+    const endIdx = content.indexOf(GITIGNORE_MARKER_END);
+    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+      // Replace existing block
+      const before = content.slice(0, startIdx).trimEnd();
+      const after = content.slice(endIdx + GITIGNORE_MARKER_END.length);
+      content = (before ? before + "\n\n" : "") + block + after;
+      writeFileSync(path, content.endsWith("\n") ? content : content + "\n");
+      return;
+    }
+  }
+
+  const sep = content && !content.endsWith("\n") ? "\n\n" : content ? "\n" : "";
+  writeFileSync(path, content + sep + block + "\n");
 }
