@@ -1,7 +1,7 @@
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 import { updateClaudeMd, saveSkeletonFile } from "./claudemd.js";
-import { installHooks, generateHookScripts } from "./hooks.js";
+import { installHooks, installMcpServer, generateHookScripts } from "./hooks.js";
 import { writeCursorRules, writeAgentsMd, writeCopilotInstructions, writeCodexMd } from "./cross-tool.js";
 import { installGitHook } from "./git-hook.js";
 import { generateRuleFiles } from "../generate/rules.js";
@@ -83,7 +83,17 @@ export function writeOutputs(
     console.log(`  Wrote ${ruleFiles.size} rule files`);
   }
 
-  // Install hooks
+  // Always register the briefed MCP server. It's the always-on integration
+  // and has zero side effects beyond adding an mcpServers entry to
+  // .claude/settings.json. Bundling this with --skip-hooks would silently
+  // disable Claude's ability to call briefed_find_usages / briefed_blast_radius
+  // / etc., which is exactly the wrong thing for a "minimal install" flag.
+  installMcpServer(root);
+  console.log("  briefed MCP server registered in .claude/settings.json");
+
+  // Install event hooks (SessionStart, UserPromptSubmit, PostToolUse, Stop).
+  // These are the "adaptive" pieces — telemetry, learning loop, dynamic
+  // context injection. They're heavier and some users prefer to skip them.
   if (!opts.skipHooks) {
     console.log("  Installing hooks...");
     generateHookScripts(root);

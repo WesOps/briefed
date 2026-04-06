@@ -22,6 +22,48 @@ interface ClaudeSettings {
 }
 
 /**
+ * Register the briefed MCP server in .claude/settings.json without touching
+ * event hooks. The MCP server is the always-on, low-cost integration: it
+ * exposes briefed's lookup tools (find_usages, blast_radius, schema, routes,
+ * symbol) so Claude can call them directly. We register it independently of
+ * event hooks so that `briefed init --skip-hooks` (a common choice for users
+ * who don't want SessionStart/PostToolUse plumbing) still gets MCP.
+ */
+export function installMcpServer(root: string) {
+  const claudeDir = join(root, ".claude");
+  const settingsPath = join(claudeDir, "settings.json");
+
+  if (!existsSync(claudeDir)) {
+    mkdirSync(claudeDir, { recursive: true });
+  }
+
+  let settings: ClaudeSettings = {};
+  if (existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    } catch (e) {
+      debug(`failed to parse settings.json, starting fresh: ${(e as Error).message}`);
+      settings = {};
+    }
+  }
+
+  if (!settings.mcpServers) settings.mcpServers = {};
+  const isBriefedRepo = (() => {
+    try {
+      const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+      return pkg.name === "briefed" && existsSync(join(root, "dist", "cli.js"));
+    } catch {
+      return false;
+    }
+  })();
+  settings.mcpServers["briefed"] = isBriefedRepo
+    ? { command: "node", args: [join(root, "dist", "cli.js"), "mcp", "--repo", root] }
+    : { command: "briefed", args: ["mcp", "--repo", root] };
+
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+}
+
+/**
  * Install briefed hooks into .claude/settings.json.
  * Adds SessionStart (compact) and UserPromptSubmit hooks.
  */
