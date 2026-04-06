@@ -59,12 +59,6 @@ program
   .action(benchCommand);
 
 program
-  .command("plan")
-  .description("Dry-run: preview what briefed will produce, estimated token costs, and features")
-  .option("--repo <path>", "Repository root path", ".")
-  .action(planCommand);
-
-program
   .command("unhook")
   .description("Remove briefed's git post-commit hook")
   .option("--repo <path>", "Repository root path", ".")
