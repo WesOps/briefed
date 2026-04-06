@@ -146,11 +146,11 @@ Hot files (last 90d, touch carefully):
   - src/commands/init.ts (11 commits, 2 authors)
   - src/extract/deep.ts (8 commits, 2 authors)
   - src/bench/metrics.ts (8 commits, 2 authors)
+  - src/extract/pipeline.ts (7 commits, 2 authors)
   - src/bench/runner.ts (7 commits, 2 authors)
   - src/extract/depgraph.ts (7 commits, 2 authors)
   - src/generate/index-file.ts (7 commits, 2 authors)
-  - src/extract/pipeline.ts (6 commits, 2 authors)
-  - src/extract/routes.ts (6 commits, 2 authors)
+  - src/deliver/output.ts (6 commits, 2 authors)
 External deps:
   - vitest@4.1.2 — 23 imports
   - glob@13.0.6 — 7 imports
