@@ -8,3 +8,9 @@ dist/
 codex.md
 .github/copilot-instructions.md
 *.briefed-backup
+
+# briefed:start
+.briefed/extract-cache.json
+.briefed/hooks/
+.claude/settings.json.briefed-backup
+# briefed:end

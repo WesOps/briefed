@@ -1,5 +1,4 @@
-import { resolve, join } from "path";
-import { existsSync } from "fs";
+import { resolve } from "path";
 import { detectStack } from "../utils/detect.js";
 import { scanFiles } from "../extract/scanner.js";
 import { detectMonorepo } from "../extract/monorepo.js";
@@ -56,18 +55,7 @@ export function planCommand(opts: PlanOptions) {
     ["express", "fastify", "hono", "nestjs", "django", "fastapi", "flask", "gin", "echo", "fiber"].includes(f)
   ) || stack.languages.some((l) => ["go", "rust", "java", "python"].includes(l));
 
-  const hasFrontend = stack.frameworks.some((f) =>
-    ["react", "next.js", "vue", "nuxt", "svelte", "astro", "remix", "angular"].includes(f)
-  );
-
   const hasORM = !!stack.dbORM;
-
-  const hasInfra = existsSync(join(root, "docker-compose.yml")) ||
-    existsSync(join(root, "docker-compose.yaml")) ||
-    existsSync(join(root, "compose.yml")) ||
-    existsSync(join(root, "Dockerfile")) ||
-    existsSync(join(root, "vercel.json")) ||
-    existsSync(join(root, "fly.toml"));
 
   const tsJsFiles = (scan.filesByExtension.get(".ts") || 0) +
     (scan.filesByExtension.get(".tsx") || 0) +
@@ -76,36 +64,26 @@ export function planCommand(opts: PlanOptions) {
 
   console.log("  Features that will activate:");
   console.log(`    ✓ Symbol extraction (${scan.totalFiles} files)`);
-  console.log(`    ✓ Dependency graph + PageRank`);
-  console.log(`    ✓ Complexity scoring`);
+  console.log(`    ✓ Dependency graph`);
   console.log(`    ✓ Convention detection`);
-  console.log(`    ✓ Usage examples`);
-  console.log(`    ✓ Error pattern detection`);
   console.log(`    ✓ Test file mapping`);
-  console.log(`    ✓ Git history analysis`);
   if (tsJsFiles > 0) console.log(`    ✓ AST extraction (${tsJsFiles} TS/JS files — high fidelity)`);
-  if (tsJsFiles > 0) console.log(`    ✓ Function-level call graph`);
   if (hasBackend) console.log(`    ✓ API route extraction`);
   if (hasORM) console.log(`    ✓ Database schema extraction (${stack.dbORM})`);
-  if (hasFrontend) console.log(`    ✓ Frontend context (pages, components, state)`);
-  if (hasInfra) console.log(`    ✓ Infrastructure detection`);
-  console.log(`    ✓ Gotcha extraction (TODOs, guards, side effects)`);
   console.log("");
 
   // Token budget estimate
   const skeletonBudget = Math.min(4000, Math.max(800, Math.round(800 + scan.totalFiles * 15)));
   const estConventions = 150;
-  const estExtras = (hasBackend ? 200 : 0) + (hasORM ? 200 : 0) + (hasFrontend ? 200 : 0) + (hasInfra ? 100 : 0);
+  const estExtras = (hasBackend ? 200 : 0) + (hasORM ? 200 : 0);
   const estAlwaysLoaded = skeletonBudget + estConventions + estExtras;
   const estPerPrompt = 500;
-  const estPerFile = 50;
 
   console.log("  Estimated token usage:");
   console.log(`    Skeleton (CLAUDE.md):   ~${formatTokens(estAlwaysLoaded)} tokens (always loaded)`);
   console.log(`    Per prompt (contracts): ~${formatTokens(estPerPrompt)} tokens (adaptive injection)`);
-  console.log(`    Per file edit (rules):  ~${formatTokens(estPerFile)} tokens (path-scoped gotchas)`);
   console.log(`    ─────────────────────────────────────`);
-  console.log(`    Estimated per prompt:   ~${formatTokens(estAlwaysLoaded + estPerPrompt + estPerFile)} tokens`);
+  console.log(`    Estimated per prompt:   ~${formatTokens(estAlwaysLoaded + estPerPrompt)} tokens`);
   console.log("");
   console.log(`    Without briefed, Claude typically spends ~5K-10K tokens`);
   console.log(`    reading files for orientation on each task.`);
@@ -118,8 +96,7 @@ export function planCommand(opts: PlanOptions) {
   console.log(`    AGENTS.md              — cross-tool context`);
   console.log(`    .github/copilot-instructions.md`);
   console.log(`    codex.md               — OpenAI Codex CLI`);
-  console.log(`    .claude/settings.json  — adaptive hooks + MCP server`);
-  console.log(`    .claude/rules/         — path-scoped gotchas`);
+  console.log(`    .claude/settings.json  — hooks + MCP server`);
   console.log(`    .briefed/              — index, contracts, hooks, cache`);
   console.log(`    .git/hooks/post-commit — auto-update on commit`);
   console.log("");

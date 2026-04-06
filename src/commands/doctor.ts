@@ -60,46 +60,18 @@ export async function doctorCommand(opts: DoctorOptions) {
     });
   }
 
-  // 2. .claude/rules/ exist
+  // 2. Deep rules (optional — only present when `briefed init --deep` was used)
   const rulesDir = join(root, ".claude", "rules");
   if (existsSync(rulesDir)) {
     const ruleFiles = readdirSync(rulesDir).filter((f) => f.startsWith("briefed-"));
     if (ruleFiles.length > 0) {
-      let totalGotchas = 0;
-      for (const f of ruleFiles) {
-        const content = readFileSync(join(rulesDir, f), "utf-8");
-        totalGotchas += (content.match(/^- /gm) || []).length;
-        // Validate YAML frontmatter
-        if (!content.startsWith("---")) {
-          checks.push({
-            name: `Rule: ${f}`,
-            status: "warn",
-            detail: "Missing YAML frontmatter (paths won't be matched)",
-            fix: `Regenerate: npx briefed init`,
-          });
-        }
-      }
       checks.push({
-        name: "Gotcha rules",
+        name: "Deep rules",
         status: "pass",
-        detail: `${ruleFiles.length} files, ${totalGotchas} constraints`,
-        fix: null,
-      });
-    } else {
-      checks.push({
-        name: "Gotcha rules",
-        status: "warn",
-        detail: "No briefed rules found (may be a simple project)",
+        detail: `${ruleFiles.length} path-scoped rule files`,
         fix: null,
       });
     }
-  } else {
-    checks.push({
-      name: "Gotcha rules",
-      status: "fail",
-      detail: ".claude/rules/ directory not found",
-      fix: "Run: npx briefed init",
-    });
   }
 
   // 3. Hooks installed
@@ -109,13 +81,12 @@ export async function doctorCommand(opts: DoctorOptions) {
     const hooksStr = JSON.stringify(settings.hooks || {});
     const hasSessionStart = hooksStr.includes("session-start");
     const hasPromptSubmit = hooksStr.includes("prompt-submit");
-    const hasPostRead = hooksStr.includes("post-read");
 
     if (hasSessionStart && hasPromptSubmit) {
       checks.push({
         name: "Hooks",
         status: "pass",
-        detail: `SessionStart: ${hasSessionStart ? "yes" : "no"}, PromptSubmit: ${hasPromptSubmit ? "yes" : "no"}, Learning: ${hasPostRead ? "yes" : "no"}`,
+        detail: `SessionStart: yes, PromptSubmit: yes`,
         fix: null,
       });
     } else {

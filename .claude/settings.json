@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"/home/user/briefed/.briefed/hooks/session-start.js\"",
+            "command": "\"/opt/node22/bin/node\" \"/home/user/briefed/.briefed/hooks/session-start.js\"",
             "timeout": 5
           }
         ]
@@ -17,50 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"/home/user/briefed/.briefed/hooks/prompt-submit.js\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"/home/user/briefed/.briefed/hooks/post-read.js\"",
-            "timeout": 2
-          }
-        ]
-      },
-      {
-        "matcher": "Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"/home/user/briefed/.briefed/hooks/post-edit.js\"",
-            "timeout": 2
-          }
-        ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"/home/user/briefed/.briefed/hooks/post-edit.js\"",
-            "timeout": 2
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"/home/user/briefed/.briefed/hooks/session-stop.js\"",
+            "command": "\"/opt/node22/bin/node\" \"/home/user/briefed/.briefed/hooks/prompt-submit.js\"",
             "timeout": 5
           }
         ]

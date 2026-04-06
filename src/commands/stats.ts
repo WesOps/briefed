@@ -23,21 +23,18 @@ export async function statsCommand(opts: StatsOptions) {
     console.log("  L1 Skeleton:     not generated (run briefed init)");
   }
 
-  // L3 Gotchas / Rules
+  // Deep rules (only present when `briefed init --deep` was used)
   const rulesDir = join(root, ".claude", "rules");
   if (existsSync(rulesDir)) {
     const ruleFiles = readdirSync(rulesDir).filter((f) => f.startsWith("briefed-"));
-    let totalTokens = 0;
-    let totalGotchas = 0;
-    for (const file of ruleFiles) {
-      const content = readFileSync(join(rulesDir, file), "utf-8");
-      totalTokens += countTokens(content);
-      totalGotchas += (content.match(/^- /gm) || []).length;
+    if (ruleFiles.length > 0) {
+      let totalTokens = 0;
+      for (const file of ruleFiles) {
+        totalTokens += countTokens(readFileSync(join(rulesDir, file), "utf-8"));
+      }
+      console.log(`  Deep rules:      ${ruleFiles.length} files (~${formatTokens(totalTokens)} tokens)`);
+      console.log(`    Delivery:      .claude/rules/ (path-scoped, loaded on demand)`);
     }
-    console.log(`  L3 Gotchas:      ${totalGotchas} constraints across ${ruleFiles.length} rule files (~${formatTokens(totalTokens)} tokens)`);
-    console.log(`    Delivery:      .claude/rules/ (path-scoped, loaded on demand)`);
-  } else {
-    console.log("  L3 Gotchas:      not generated");
   }
 
   // L2 Contracts
@@ -81,9 +78,8 @@ export async function statsCommand(opts: StatsOptions) {
     : 0;
   console.log(`  Estimated tokens per prompt:`);
   console.log(`    L1 (always):     ~${formatTokens(skeletonTokens)}`);
-  console.log(`    L3 (per file):   ~100-300`);
   console.log(`    L2 (per prompt): ~400-1500`);
-  console.log(`    Total:           ~${formatTokens(skeletonTokens + 700)}-${formatTokens(skeletonTokens + 1800)}`);
+  console.log(`    Total:           ~${formatTokens(skeletonTokens + 400)}-${formatTokens(skeletonTokens + 1500)}`);
   console.log("");
   console.log(`  Compare to without briefed:`);
   console.log(`    Orientation:     ~5000-10000 tokens (3-6 file reads)`);
