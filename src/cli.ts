@@ -60,6 +60,7 @@ program
   .option("--timeout <seconds>", "Per-task timeout in seconds (default 600)")
   .option("--no-resume", "Re-run tasks even if cached results exist")
   .option("--compare-deep", "Also run a third arm with `briefed init --deep` (LLM-annotated rules via claude -p)")
+  .option("--serena-compare", "Compare Serena-only vs Serena+briefed. Requires Serena pre-registered in .claude/settings.json")
   .action(benchCommand);
 
 program
