@@ -1,9 +1,9 @@
 <!-- briefed:agents:start -->
 # briefed: typescript, javascript project
 Stack: typescript, javascript
-Files: 67 source files across 7 directories
+Files: 68 source files across 7 directories
 
-## src/extract/ (34 files)
+## src/extract/ (35 files)
 signatures.ts ★12
   interface Symbol — Extracted symbol from a source file. [2 callers]
   type SymbolKind = | "function"
@@ -18,14 +18,14 @@ ast.ts ★2: extractWithAst — AST-based extraction for TypeScript/JavaScript f
 depgraph.ts ★8
   interface DepGraph [7 callers]
   buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions. [3 callers]
+routes.ts ★6
+  interface Route [2 callers]
+  extractRoutes(root: string): Route[] — Extract API routes from the codebase. [4 callers]
+  formatRoutes(routes: Route[]): string — Format routes for skeleton inclusion. [2 callers]
 scanner.ts ★7
   interface DiscoveredFile
   interface ScanResult [2 callers]
   scanFiles(root: string): ScanResult — Discover all parseable source files in a project. [5 callers]
-routes.ts ★5
-  interface Route [2 callers]
-  extractRoutes(root: string): Route[] — Extract API routes from the codebase. [3 callers]
-  formatRoutes(routes: Route[]): string — Format routes for skeleton inclusion.
 gotchas.ts ★3
   interface Gotcha [2 callers]
   type GotchaCategory = | "important_comment"   // TODO/HACK/NOTE/WARNING/FIXME with...
@@ -78,6 +78,7 @@ tests.ts ★1: TestMapping, findTestMappings — Find test files that correspond
 ast.test.ts: 
 complexity.test.ts: 
 depgraph.test.ts: 
+routes.test.ts: GET
 
 ## src/utils/ (7 files)
 log.ts ★9
@@ -96,9 +97,9 @@ tokens.ts ★6
   formatBytes(bytes: number): string — Format byte count for display
 pagerank.test.ts: 
 
-<!-- briefed skeleton: 32 files, ~1792 tokens -->
+<!-- briefed skeleton: 33 files, ~1800 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
-Tests: 15 source files have matching test files
+Tests: 16 source files have matching test files
 Error handling:
   - Uses Result/Either types for error propagation (not exceptions)
   - Prefers try/catch wrapping over throwing
@@ -122,7 +123,7 @@ Usage examples:
   extractSchemas: schemas = extractSchemas(root); (pipeline.ts:248)
   extractSchemas: const schemas = extractSchemas(root); (blast-radius.ts:54)
   extractRoutes: routes = extractRoutes(root); (pipeline.ts:256)
-  extractRoutes: const routes = extractRoutes(root); (blast-radius.ts:48)
+  extractRoutes: const routes = extractRoutes(tmpDir); (routes.test.ts:35)
   loadCachedExtractions: const { depGraph } = loadCachedExtractions(root); (blast-radius.ts:14)
   loadCachedExtractions: const { extractions, depGraph } = loadCachedExtractions(root); (find-usages.ts:26)
 Commands:
@@ -136,13 +137,13 @@ Hot files (last 90d, touch carefully):
   - src/commands/init.ts (14 commits, 2 authors)
   - src/cli.ts (13 commits, 2 authors)
   - src/deliver/hooks.ts (9 commits, 2 authors)
+  - src/extract/routes.ts (7 commits, 2 authors)
   - src/extract/depgraph.ts (7 commits, 2 authors)
   - src/generate/index-file.ts (7 commits, 2 authors)
   - src/generate/skeleton.ts (7 commits, 2 authors)
   - src/extract/signatures.ts (6 commits, 2 authors)
   - src/bench/metrics.ts (6 commits, 2 authors)
   - src/extract/env.ts (6 commits, 2 authors)
-  - src/extract/frontend.ts (6 commits, 2 authors)
 
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
 <!-- briefed:agents:end -->
