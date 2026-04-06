@@ -136,13 +136,13 @@ Hot files (last 90d, touch carefully):
   - src/commands/init.ts (14 commits, 2 authors)
   - src/cli.ts (13 commits, 2 authors)
   - src/deliver/hooks.ts (9 commits, 2 authors)
+  - src/extract/depgraph.ts (7 commits, 2 authors)
   - src/generate/index-file.ts (7 commits, 2 authors)
   - src/generate/skeleton.ts (7 commits, 2 authors)
+  - src/extract/signatures.ts (6 commits, 2 authors)
   - src/bench/metrics.ts (6 commits, 2 authors)
-  - src/extract/depgraph.ts (6 commits, 2 authors)
   - src/extract/env.ts (6 commits, 2 authors)
   - src/extract/frontend.ts (6 commits, 2 authors)
-  - src/extract/routes.ts (6 commits, 2 authors)
 
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
 <!-- briefed:agents:end -->
