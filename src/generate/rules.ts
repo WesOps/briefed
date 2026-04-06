@@ -40,11 +40,18 @@ export function generateRuleFiles(
     lines.push(`# Constraints: ${dir}/`);
     lines.push("");
 
-    // Group by category
+    // Group by category, deduping by text within each category. The rule
+    // file format is just a flat bullet list — file:line context is dropped —
+    // so two gotchas with identical text add zero information. This matters
+    // a lot for patterns like "Uses soft deletes" which match every file in
+    // a directory and would otherwise be repeated dozens of times.
     const byCategory = new Map<string, Gotcha[]>();
     for (const g of dirGotchas) {
       if (!byCategory.has(g.category)) byCategory.set(g.category, []);
-      byCategory.get(g.category)!.push(g);
+      const bucket = byCategory.get(g.category)!;
+      if (!bucket.some((existing) => existing.text === g.text)) {
+        bucket.push(g);
+      }
     }
 
     // Important comments first
