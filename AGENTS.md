@@ -136,8 +136,8 @@ Commands:
   start: node dist/cli.js
 Required env: config: BRIEFED_DEBUG, APPDATA
 Hot files (last 90d, touch carefully):
+  - src/commands/init.ts (14 commits, 2 authors)
   - src/cli.ts (13 commits, 2 authors)
-  - src/commands/init.ts (13 commits, 2 authors)
   - src/deliver/hooks.ts (9 commits, 2 authors)
   - src/generate/index-file.ts (7 commits, 2 authors)
   - src/generate/skeleton.ts (7 commits, 2 authors)
