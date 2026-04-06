@@ -25,27 +25,35 @@ export interface TaskMetrics {
 export function parseResult(filePath: string): TaskMetrics {
   const content = readFileSync(filePath, "utf-8").trim();
 
-  // Handle JSONL (multiple lines) — take the last valid JSON
-  const lines = content.split("\n").filter(Boolean);
-  let data: Record<string, unknown> | null = null;
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    try {
-      const parsed = JSON.parse(lines[i]);
-      if (parsed.type === "result" || parsed.duration_ms) {
-        data = parsed;
-        break;
-      }
-    } catch {
-      continue;
+  // The transcript may be:
+  //   1) A single JSON array of events (claude --output-format json)
+  //   2) JSONL (one JSON object per line)
+  //   3) A single JSON object (just the result)
+  let entries: Record<string, unknown>[] = [];
+  try {
+    const parsed = JSON.parse(content);
+    entries = Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    // Fall back to JSONL parsing
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        entries.push(JSON.parse(trimmed));
+      } catch { /* skip */ }
     }
   }
 
-  if (!data) {
-    // Try parsing the whole content as one JSON
-    data = JSON.parse(content);
+  // Find the result entry (usually last)
+  let data: Record<string, unknown> | null = null;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.type === "result" || e.duration_ms) {
+      data = e;
+      break;
+    }
   }
-
+  if (!data && entries.length > 0) data = entries[entries.length - 1];
   if (!data) throw new Error("No valid JSON found in transcript");
 
   const usage = (typeof data.usage === "object" && data.usage !== null ? data.usage : {}) as Record<string, unknown>;
@@ -53,33 +61,31 @@ export function parseResult(filePath: string): TaskMetrics {
   const num = (v: unknown): number => (typeof v === "number" ? v : 0);
   const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
-  // Count tool calls from JSONL lines (each line may be a tool_use message)
+  // Count tool_use blocks across all entries.
+  // Tool use blocks live at entry.message.content[].{type:"tool_use",name,input}
+  // for assistant messages in the streaming format.
   let fileReads = 0;
   let fileEdits = 0;
   const filesRead = new Set<string>();
-  for (const line of lines) {
-    try {
-      const entry = JSON.parse(line);
-      // Check for tool_use in content blocks
-      const contents = Array.isArray(entry.content) ? entry.content : [];
-      for (const block of contents) {
-        if (block.type === "tool_use") {
-          if (block.name === "Read") {
-            fileReads++;
-            if (block.input?.file_path) filesRead.add(block.input.file_path);
-          } else if (block.name === "Edit" || block.name === "Write") {
-            fileEdits++;
-          }
-        }
-      }
-      // Also check tool_name at top level (some formats)
-      if (entry.tool_name === "Read") {
+  for (const entry of entries) {
+    const message = (entry.message as Record<string, unknown> | undefined);
+    const contents = Array.isArray(message?.content)
+      ? (message.content as Record<string, unknown>[])
+      : Array.isArray(entry.content)
+        ? (entry.content as Record<string, unknown>[])
+        : [];
+    for (const block of contents) {
+      if (block.type !== "tool_use") continue;
+      const name = block.name;
+      const input = (block.input as Record<string, unknown> | undefined) || {};
+      if (name === "Read") {
         fileReads++;
-        if (entry.tool_input?.file_path) filesRead.add(entry.tool_input.file_path);
-      } else if (entry.tool_name === "Edit" || entry.tool_name === "Write") {
+        const fp = input.file_path;
+        if (typeof fp === "string") filesRead.add(fp);
+      } else if (name === "Edit" || name === "Write" || name === "MultiEdit") {
         fileEdits++;
       }
-    } catch { /* skip non-JSON lines */ }
+    }
   }
 
   return {

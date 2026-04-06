@@ -194,10 +194,14 @@ function findClaude(): string | null {
 }
 
 function runClaudeTask(claudePath: string, cwd: string, prompt: string, outputPath: string) {
+  // Important: do NOT use shell:true here. With shell:true, the prompt
+  // argument is tokenized by whitespace, so "Read the files..." becomes
+  // just "Read". On Windows we need shell:true for .cmd files, so detect.
+  const isWindows = process.platform === "win32";
   const result = spawnSync(
     claudePath,
     ["-p", prompt, "--output-format", "json", "--max-turns", "20", "--permission-mode", "acceptEdits"],
-    { cwd, stdio: ["pipe", "pipe", "pipe"], timeout: 300_000, encoding: "utf-8", shell: true }
+    { cwd, stdio: ["pipe", "pipe", "pipe"], timeout: 300_000, encoding: "utf-8", shell: isWindows }
   );
   if (result.error) throw new Error(`CLI failed: ${result.error.message}`);
   if (result.stdout?.trim()) {
