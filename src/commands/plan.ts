@@ -75,21 +75,21 @@ export function planCommand(opts: PlanOptions) {
     (scan.filesByExtension.get(".jsx") || 0);
 
   console.log("  Features that will activate:");
-  console.log(`    Symbol extraction (${scan.totalFiles} files)`);
-  console.log(`    Dependency graph + PageRank`);
-  console.log(`    Complexity scoring`);
-  console.log(`    Convention detection`);
-  console.log(`    Usage examples`);
-  console.log(`    Error pattern detection`);
-  console.log(`    Test file mapping`);
-  console.log(`    Git history analysis`);
-  if (tsJsFiles > 0) console.log(`    AST extraction (${tsJsFiles} TS/JS files)`);
-  if (tsJsFiles > 0) console.log(`    Function-level call graph`);
-  if (hasBackend) console.log(`    API route extraction`);
-  if (hasORM) console.log(`    Database schema extraction (${stack.dbORM})`);
-  if (hasFrontend) console.log(`    Frontend context (pages, components, state)`);
-  if (hasInfra) console.log(`    Infrastructure detection`);
-  console.log(`    Gotcha extraction (TODOs, guards, side effects)`);
+  console.log(`    ✓ Symbol extraction (${scan.totalFiles} files)`);
+  console.log(`    ✓ Dependency graph + PageRank`);
+  console.log(`    ✓ Complexity scoring`);
+  console.log(`    ✓ Convention detection`);
+  console.log(`    ✓ Usage examples`);
+  console.log(`    ✓ Error pattern detection`);
+  console.log(`    ✓ Test file mapping`);
+  console.log(`    ✓ Git history analysis`);
+  if (tsJsFiles > 0) console.log(`    ✓ AST extraction (${tsJsFiles} TS/JS files — high fidelity)`);
+  if (tsJsFiles > 0) console.log(`    ✓ Function-level call graph`);
+  if (hasBackend) console.log(`    ✓ API route extraction`);
+  if (hasORM) console.log(`    ✓ Database schema extraction (${stack.dbORM})`);
+  if (hasFrontend) console.log(`    ✓ Frontend context (pages, components, state)`);
+  if (hasInfra) console.log(`    ✓ Infrastructure detection`);
+  console.log(`    ✓ Gotcha extraction (TODOs, guards, side effects)`);
   console.log("");
 
   // Token budget estimate

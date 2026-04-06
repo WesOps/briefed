@@ -2,10 +2,10 @@
 
 import { Command } from "commander";
 import { initCommand } from "./commands/init.js";
+import { planCommand } from "./commands/plan.js";
 import { statsCommand } from "./commands/stats.js";
 import { benchCommand } from "./commands/bench.js";
 import { doctorCommand } from "./commands/doctor.js";
-import { planCommand } from "./commands/plan.js";
 import { removeGitHook } from "./deliver/git-hook.js";
 import { startMcpServer } from "./mcp/server.js";
 import { resolve } from "path";
@@ -27,6 +27,12 @@ program
   .option("--skip-hooks", "Skip hook installation")
   .option("--skip-rules", "Skip .claude/rules/ generation")
   .action(initCommand);
+
+program
+  .command("plan")
+  .description("Preview what briefed will generate — file counts, token estimates, features — without writing anything")
+  .option("--repo <path>", "Repository root path", ".")
+  .action(planCommand);
 
 program
   .command("stats")
