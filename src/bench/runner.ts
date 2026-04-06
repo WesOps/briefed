@@ -196,7 +196,7 @@ function findClaude(): string | null {
 function runClaudeTask(claudePath: string, cwd: string, prompt: string, outputPath: string) {
   const result = spawnSync(
     claudePath,
-    ["-p", prompt, "--output-format", "json", "--max-turns", "20", "--permission-mode", "bypassPermissions"],
+    ["-p", prompt, "--output-format", "json", "--max-turns", "20", "--permission-mode", "acceptEdits"],
     { cwd, stdio: ["pipe", "pipe", "pipe"], timeout: 300_000, encoding: "utf-8", shell: true }
   );
   if (result.error) throw new Error(`CLI failed: ${result.error.message}`);
