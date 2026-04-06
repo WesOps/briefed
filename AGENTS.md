@@ -134,16 +134,16 @@ Commands:
   start: node dist/cli.js
 Required env: config: BRIEFED_DEBUG, USERPROFILE, APPDATA
 Hot files (last 90d, touch carefully):
-  - src/commands/init.ts (14 commits, 2 authors)
+  - src/commands/init.ts (15 commits, 2 authors)
   - src/cli.ts (13 commits, 2 authors)
   - src/deliver/hooks.ts (9 commits, 2 authors)
   - src/extract/routes.ts (7 commits, 2 authors)
   - src/extract/depgraph.ts (7 commits, 2 authors)
   - src/generate/index-file.ts (7 commits, 2 authors)
   - src/generate/skeleton.ts (7 commits, 2 authors)
+  - src/extract/pipeline.ts (6 commits, 2 authors)
   - src/extract/signatures.ts (6 commits, 2 authors)
   - src/bench/metrics.ts (6 commits, 2 authors)
-  - src/extract/env.ts (6 commits, 2 authors)
 External deps:
   - vitest@4.1.2 — 17 imports
   - glob@13.0.6 — 7 imports

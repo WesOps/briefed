@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"C:\\Users\\Wesley\\briefed\\.briefed\\hooks\\session-start.js\"",
+            "command": "node \"/home/user/briefed/.briefed/hooks/session-start.js\"",
             "timeout": 5
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"C:\\Users\\Wesley\\briefed\\.briefed\\hooks\\prompt-submit.js\"",
+            "command": "node \"/home/user/briefed/.briefed/hooks/prompt-submit.js\"",
             "timeout": 5
           }
         ]
@@ -29,11 +29,53 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"C:\\Users\\Wesley\\briefed\\.briefed\\hooks\\post-read.js\"",
+            "command": "node \"/home/user/briefed/.briefed/hooks/post-read.js\"",
+            "timeout": 2
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/user/briefed/.briefed/hooks/post-edit.js\"",
+            "timeout": 2
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/user/briefed/.briefed/hooks/post-edit.js\"",
             "timeout": 2
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/user/briefed/.briefed/hooks/session-stop.js\"",
+            "timeout": 5
+          }
+        ]
+      }
     ]
+  },
+  "mcpServers": {
+    "briefed": {
+      "command": "node",
+      "args": [
+        "/home/user/briefed/dist/cli.js",
+        "mcp",
+        "--repo",
+        "/home/user/briefed"
+      ]
+    }
   }
 }
