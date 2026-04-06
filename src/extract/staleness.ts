@@ -50,13 +50,22 @@ export function checkStaleness(root: string): StalenessReport {
     ).trim();
 
     const changed = new Set<string>();
+    const isIgnored = (f: string) =>
+      f.startsWith(".briefed/") ||
+      f.startsWith(".claude/") ||
+      f.startsWith("dist/") ||
+      f.startsWith("build/") ||
+      f.startsWith("node_modules/");
     if (changedOutput) {
-      for (const f of changedOutput.split("\n")) changed.add(f.trim());
+      for (const f of changedOutput.split("\n")) {
+        const t = f.trim();
+        if (t && !isIgnored(t)) changed.add(t);
+      }
     }
     if (uncommitted) {
       for (const line of uncommitted.split("\n")) {
         const file = line.trim().slice(3); // strip status chars
-        if (file) changed.add(file);
+        if (file && !isIgnored(file)) changed.add(file);
       }
     }
 
