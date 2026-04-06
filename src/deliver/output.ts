@@ -124,21 +124,10 @@ export function writeOutputs(
 
 const GITIGNORE_MARKER_START = "# briefed:start";
 const GITIGNORE_MARKER_END = "# briefed:end";
-// Everything briefed generates is local-only by default. The repo stays clean
-// of generated context; the SessionStart hook re-runs `briefed init` to keep
-// each developer's local copy fresh. To bootstrap a fresh clone, run
-// `briefed init` once.
 const GITIGNORE_ENTRIES = [
-  "# briefed: all generated context is local-only.",
-  "# Run `briefed init` once after cloning to bootstrap.",
-  ".briefed/",
-  ".claude/",
-  "CLAUDE.md",
-  "AGENTS.md",
-  ".cursorrules",
-  "codex.md",
-  ".github/copilot-instructions.md",
-  "*.briefed-backup",
+  ".briefed/extract-cache.json",
+  ".briefed/hooks/",
+  ".claude/settings.json.briefed-backup",
 ];
 
 /**
