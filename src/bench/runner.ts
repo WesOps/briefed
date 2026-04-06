@@ -1,7 +1,15 @@
 import { execSync, spawnSync } from "child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "fs";
 import { join, resolve } from "path";
-import { parseResult, compareMetrics, compareMetrics3, generateSummary, type TaskMetrics } from "./metrics.js";
+import {
+  parseResult,
+  compareMetrics,
+  compareMetrics3,
+  compareMetricsSerena,
+  generateSummary,
+  type TaskMetrics,
+} from "./metrics.js";
+import { SERENA_COMPARE_TASKS } from "./serena-tasks.js";
 
 export interface BenchTask {
   name: string;
@@ -50,6 +58,13 @@ export interface RunOptions {
   resume?: boolean;
   /** Also run a third arm with `briefed init --deep` for LLM-annotated rules. */
   compareDeep?: boolean;
+  /**
+   * Run the "does briefed add value on top of Serena?" comparison.
+   * Assumes Serena is already registered in .claude/settings.json and working.
+   * Uses the orientation-biased task set in serena-tasks.ts.
+   * Arms: "serena" (briefed stripped, Serena preserved) vs "serena+briefed".
+   */
+  serenaCompare?: boolean;
 }
 
 /**
@@ -207,6 +222,321 @@ export async function runBenchmark(opts: RunOptions): Promise<BenchResult[]> {
   }
 
   return results;
+}
+
+/**
+ * Run the Serena comparison: does briefed add value on top of Serena?
+ *
+ * Assumes Serena is already registered in `.claude/settings.json` under
+ * mcpServers. We never touch the Serena entry — it stays registered across
+ * both phases. We only add/remove briefed's artifacts between phases.
+ *
+ * Phase A (serena-only): strip briefed from CLAUDE.md + settings.json + rules
+ * Phase B (serena+briefed): run `briefed init` (hooks enabled) alongside Serena
+ *
+ * Results saved to .briefed/bench/serena/{serena,serena+briefed}/<task>.json
+ */
+export async function runSerenaCompare(opts: RunOptions): Promise<BenchResult[]> {
+  const root = resolve(opts.repo);
+  const tasks = (opts.tasks || SERENA_COMPARE_TASKS).slice(0, opts.maxTasks || SERENA_COMPARE_TASKS.length);
+  const outputDir = resolve(opts.outputDir || join(root, ".briefed", "bench", "serena"));
+  const timeoutMs = opts.timeoutMs || 600_000;
+  const resume = opts.resume !== false;
+
+  mkdirSync(join(outputDir, "serena"), { recursive: true });
+  mkdirSync(join(outputDir, "serena+briefed"), { recursive: true });
+
+  const claudePath = findClaude();
+  if (!claudePath) {
+    console.error("  Error: 'claude' CLI not found. Install with: npm i -g @anthropic-ai/claude-code");
+    return [];
+  }
+  console.log(`  Using: ${claudePath}`);
+
+  // Sanity check: Serena must actually be registered, otherwise the whole
+  // comparison is meaningless. We check both phases' starting state against
+  // this before running anything.
+  const settingsPath = join(root, ".claude", "settings.json");
+  if (!existsSync(settingsPath)) {
+    console.error("  Error: .claude/settings.json not found. Register Serena first.");
+    console.error("  See https://github.com/oraios/serena for install instructions.");
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    const servers = (parsed.mcpServers || {}) as Record<string, unknown>;
+    if (!servers.serena) {
+      console.error("  Error: Serena is not registered in .claude/settings.json mcpServers.");
+      console.error("  Register it first — the bench needs Serena as the baseline.");
+      return [];
+    }
+  } catch (e) {
+    console.error(`  Error parsing .claude/settings.json: ${(e as Error).message}`);
+    return [];
+  }
+
+  // Report-only shortcut
+  if (opts.skipWithout && opts.skipWith) {
+    console.log("  Report-only mode: loading existing results...\n");
+    return loadSerenaResults(tasks, outputDir);
+  }
+
+  // Phase A: Serena only (strip briefed artifacts, preserve Serena)
+  if (!opts.skipWithout) {
+    console.log("\n  Phase A: Serena only (briefed stripped)\n");
+    stripBriefedPreservingMcp(root);
+
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      const out = join(outputDir, "serena", `${task.name}.json`);
+      if (resume && existsSync(out)) {
+        console.log(`  [${i + 1}/${tasks.length}] ${task.name} (cached, skipping)`);
+        continue;
+      }
+      console.log(`  [${i + 1}/${tasks.length}] ${task.name}`);
+      try {
+        runClaudeTask(claudePath, root, task.prompt, out, timeoutMs);
+        const m = parseResult(out);
+        console.log(
+          `    ${(m.durationMs / 1000).toFixed(1)}s, ${m.numTurns} turns, ${m.totalToolCalls} tool calls, ${formatNumber(m.inputTokens + m.outputTokens)} tokens`,
+        );
+      } catch (e) {
+        console.error(`    Error: ${(e as Error).message.slice(0, 120)}`);
+      }
+    }
+  }
+
+  // Phase B: Serena + briefed (run briefed init, keep Serena intact)
+  if (!opts.skipWith) {
+    console.log("\n  Phase B: Serena + briefed\n");
+    const briefedCli = join(import.meta.dirname, "..", "cli.js");
+    console.log("  Running `briefed init` (full, with hooks)...");
+    try {
+      execSync(`node "${briefedCli}" init --repo "${root}"`, { stdio: "inherit" });
+    } catch (e) {
+      console.error(`  briefed init failed: ${(e as Error).message.slice(0, 200)}`);
+      return [];
+    }
+
+    // Sanity: verify Serena is still registered after briefed init
+    try {
+      const parsed = JSON.parse(readFileSync(settingsPath, "utf-8"));
+      const servers = (parsed.mcpServers || {}) as Record<string, unknown>;
+      if (!servers.serena) {
+        console.error("  Error: briefed init clobbered the Serena MCP registration. Aborting.");
+        return [];
+      }
+      if (!servers.briefed) {
+        console.error("  Error: briefed init did not register the briefed MCP server. Aborting.");
+        return [];
+      }
+    } catch (e) {
+      console.error(`  Error re-reading settings.json: ${(e as Error).message}`);
+      return [];
+    }
+
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      const out = join(outputDir, "serena+briefed", `${task.name}.json`);
+      if (resume && existsSync(out)) {
+        console.log(`  [${i + 1}/${tasks.length}] ${task.name} (cached, skipping)`);
+        continue;
+      }
+      console.log(`  [${i + 1}/${tasks.length}] ${task.name}`);
+      try {
+        runClaudeTask(claudePath, root, task.prompt, out, timeoutMs);
+        const m = parseResult(out);
+        console.log(
+          `    ${(m.durationMs / 1000).toFixed(1)}s, ${m.numTurns} turns, ${m.totalToolCalls} tool calls, ${formatNumber(m.inputTokens + m.outputTokens)} tokens`,
+        );
+      } catch (e) {
+        console.error(`    Error: ${(e as Error).message.slice(0, 120)}`);
+      }
+    }
+  }
+
+  return loadSerenaResults(tasks, outputDir);
+}
+
+function loadSerenaResults(tasks: BenchTask[], outputDir: string): BenchResult[] {
+  const results: BenchResult[] = [];
+  for (const task of tasks) {
+    const result: BenchResult = { task, without: null, withCctx: null, withDeep: null, error: null };
+    try {
+      const serenaPath = join(outputDir, "serena", `${task.name}.json`);
+      const bothPath = join(outputDir, "serena+briefed", `${task.name}.json`);
+      if (existsSync(serenaPath)) result.without = parseResult(serenaPath);
+      if (existsSync(bothPath)) result.withCctx = parseResult(bothPath);
+    } catch (e) {
+      result.error = (e as Error).message;
+    }
+    results.push(result);
+  }
+  return results;
+}
+
+/**
+ * Generate a Serena-comparison report. Uses the Serena-specific metric
+ * formatter so the per-server MCP breakdown is visible.
+ */
+export function generateSerenaReport(results: BenchResult[]): string {
+  const lines: string[] = [];
+  lines.push("  " + "═".repeat(70));
+  lines.push("  briefed Benchmark — Does briefed add value on top of Serena?");
+  lines.push("  " + "═".repeat(70));
+  lines.push("");
+
+  for (const r of results) {
+    if (r.without && r.withCctx) {
+      lines.push(compareMetricsSerena(r.without, r.withCctx, r.task.name));
+      lines.push("");
+    } else if (r.error) {
+      lines.push(`  Task "${r.task.name}": Error — ${r.error}`);
+    } else {
+      lines.push(`  Task "${r.task.name}": Missing data (need both arms)`);
+    }
+  }
+
+  // Aggregate summary across tasks
+  let compared = 0;
+  let totalCallsSerena = 0;
+  let totalCallsBoth = 0;
+  let totalTokensSerena = 0;
+  let totalTokensBoth = 0;
+  let totalTurnsSerena = 0;
+  let totalTurnsBoth = 0;
+  let totalCostSerena = 0;
+  let totalCostBoth = 0;
+  const mcpBreakdownSerena: Record<string, number> = {};
+  const mcpBreakdownBoth: Record<string, number> = {};
+
+  for (const r of results) {
+    if (!r.without || !r.withCctx) continue;
+    compared++;
+    totalCallsSerena += r.without.totalToolCalls;
+    totalCallsBoth += r.withCctx.totalToolCalls;
+    totalTokensSerena += r.without.inputTokens;
+    totalTokensBoth += r.withCctx.inputTokens;
+    totalTurnsSerena += r.without.numTurns;
+    totalTurnsBoth += r.withCctx.numTurns;
+    totalCostSerena += r.without.totalCostUsd;
+    totalCostBoth += r.withCctx.totalCostUsd;
+    for (const [k, v] of Object.entries(r.without.mcpCallsByServer)) {
+      mcpBreakdownSerena[k] = (mcpBreakdownSerena[k] || 0) + v;
+    }
+    for (const [k, v] of Object.entries(r.withCctx.mcpCallsByServer)) {
+      mcpBreakdownBoth[k] = (mcpBreakdownBoth[k] || 0) + v;
+    }
+  }
+
+  if (compared === 0) {
+    lines.push("  No tasks with both arms to compare.");
+    return lines.join("\n");
+  }
+
+  lines.push("  " + "═".repeat(70));
+  lines.push("  SUMMARY (mean across tasks)");
+  lines.push("  " + "═".repeat(70));
+  lines.push(`  Tasks compared:       ${compared}`);
+  lines.push(
+    `  Total tool calls:     ${(totalCallsSerena / compared).toFixed(1)} → ${(totalCallsBoth / compared).toFixed(1)} (${formatPct(totalCallsSerena, totalCallsBoth)})`,
+  );
+  lines.push(
+    `  Turns:                ${(totalTurnsSerena / compared).toFixed(1)} → ${(totalTurnsBoth / compared).toFixed(1)} (${formatPct(totalTurnsSerena, totalTurnsBoth)})`,
+  );
+  lines.push(
+    `  Input tokens:         ${formatNumber(Math.round(totalTokensSerena / compared))} → ${formatNumber(Math.round(totalTokensBoth / compared))} (${formatPct(totalTokensSerena, totalTokensBoth)})`,
+  );
+  lines.push(
+    `  Cost:                 $${totalCostSerena.toFixed(4)} → $${totalCostBoth.toFixed(4)} (${formatPct(totalCostSerena, totalCostBoth)})`,
+  );
+  lines.push("");
+  lines.push("  MCP call breakdown (totals across all tasks):");
+  const allServers = new Set([...Object.keys(mcpBreakdownSerena), ...Object.keys(mcpBreakdownBoth)]);
+  for (const server of allServers) {
+    const s = mcpBreakdownSerena[server] || 0;
+    const b = mcpBreakdownBoth[server] || 0;
+    lines.push(`    ${server.padEnd(14)} ${s.toString().padStart(6)} → ${b.toString().padStart(6)}`);
+  }
+  lines.push("  " + "═".repeat(70));
+  lines.push("");
+  lines.push("  NOTE: These numbers measure efficiency, not answer quality.");
+  lines.push("  Manually score each task transcript 1-5 for correctness before");
+  lines.push("  drawing conclusions. Low tool count + wrong answer = bad.");
+
+  return lines.join("\n");
+}
+
+function formatPct(before: number, after: number): string {
+  if (before === 0 && after === 0) return "—";
+  if (before === 0) return `+${after}`;
+  const pct = Math.round(((after - before) / before) * 100);
+  const sign = pct >= 0 ? "+" : "";
+  return `${sign}${pct}%`;
+}
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
+}
+
+/**
+ * Remove all briefed artifacts from a repo while preserving everything else
+ * in .claude/settings.json — specifically, the Serena MCP registration and
+ * any other user-configured hooks/servers. This is what makes the "serena
+ * only" arm of the bench a clean baseline.
+ */
+function stripBriefedPreservingMcp(root: string) {
+  // 1. Strip briefed block from CLAUDE.md
+  const claudeMd = join(root, "CLAUDE.md");
+  if (existsSync(claudeMd)) {
+    const content = readFileSync(claudeMd, "utf-8");
+    if (content.includes("<!-- briefed:start -->")) {
+      const stripped = content
+        .replace(/<!-- briefed:start -->[\s\S]*?<!-- briefed:end -->\n?/, "")
+        .trim();
+      writeFileSync(claudeMd, stripped + (stripped ? "\n" : ""));
+    }
+  }
+
+  // 2. Remove briefed rule files
+  const rulesDir = join(root, ".claude", "rules");
+  if (existsSync(rulesDir)) {
+    for (const f of readdirSync(rulesDir).filter((f) => f.startsWith("briefed-"))) {
+      try { rmSync(join(rulesDir, f)); } catch { /* ignore */ }
+    }
+  }
+
+  // 3. Remove briefed MCP + briefed hooks from settings.json, leaving
+  //    everything else (Serena, user-defined hooks, other servers) intact.
+  const settingsPath = join(root, ".claude", "settings.json");
+  if (!existsSync(settingsPath)) return;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(readFileSync(settingsPath, "utf-8"));
+  } catch {
+    return;
+  }
+
+  const mcpServers = parsed.mcpServers as Record<string, unknown> | undefined;
+  if (mcpServers && "briefed" in mcpServers) {
+    delete mcpServers.briefed;
+  }
+
+  const hooks = parsed.hooks as Record<string, Array<{ hooks: Array<{ command?: string }> }>> | undefined;
+  if (hooks) {
+    for (const eventName of Object.keys(hooks)) {
+      hooks[eventName] = hooks[eventName].filter(
+        (entry) => !entry.hooks.some((h) => (h.command || "").includes("briefed")),
+      );
+      if (hooks[eventName].length === 0) {
+        delete hooks[eventName];
+      }
+    }
+  }
+
+  writeFileSync(settingsPath, JSON.stringify(parsed, null, 2) + "\n");
 }
 
 /**

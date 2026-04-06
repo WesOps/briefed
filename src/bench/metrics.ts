@@ -17,6 +17,10 @@ export interface TaskMetrics {
   fileReads: number;      // how many Read tool calls (orientation cost)
   fileEdits: number;      // how many Edit/Write tool calls (actual work)
   uniqueFilesRead: number; // unique files read (deduped)
+  grepCalls: number;      // Grep / Glob / Bash search calls
+  mcpCalls: number;       // Any MCP tool call (Serena, briefed, etc.)
+  totalToolCalls: number; // Every tool call, period — the real "hunting cost"
+  mcpCallsByServer: Record<string, number>; // e.g. {"serena": 4, "briefed": 2}
 }
 
 /**
@@ -69,7 +73,11 @@ export function parseResult(filePath: string): TaskMetrics {
   let sumCacheRead = 0;
   let fileReads = 0;
   let fileEdits = 0;
+  let grepCalls = 0;
+  let mcpCalls = 0;
+  let totalToolCalls = 0;
   const filesRead = new Set<string>();
+  const mcpCallsByServer: Record<string, number> = {};
 
   for (const entry of entries) {
     const message = entry.message as Record<string, unknown> | undefined;
@@ -91,14 +99,24 @@ export function parseResult(filePath: string): TaskMetrics {
         : [];
     for (const block of contents) {
       if (block.type !== "tool_use") continue;
-      const name = block.name;
+      totalToolCalls++;
+      const rawName = block.name;
+      const name = typeof rawName === "string" ? rawName : "";
       const input = (block.input as Record<string, unknown> | undefined) || {};
+
       if (name === "Read") {
         fileReads++;
         const fp = input.file_path;
         if (typeof fp === "string") filesRead.add(fp);
       } else if (name === "Edit" || name === "Write" || name === "MultiEdit") {
         fileEdits++;
+      } else if (name === "Grep" || name === "Glob") {
+        grepCalls++;
+      } else if (name.startsWith("mcp__")) {
+        // MCP tool names are shaped "mcp__<server>__<tool>"
+        mcpCalls++;
+        const server = name.split("__")[1] || "unknown";
+        mcpCallsByServer[server] = (mcpCallsByServer[server] || 0) + 1;
       }
     }
   }
@@ -130,7 +148,109 @@ export function parseResult(filePath: string): TaskMetrics {
     fileReads,
     fileEdits,
     uniqueFilesRead: filesRead.size,
+    grepCalls,
+    mcpCalls,
+    totalToolCalls,
+    mcpCallsByServer,
   };
+}
+
+/**
+ * Compare two task results for the Serena vs Serena+briefed bench.
+ *
+ * Different metric emphasis than compareMetrics(): the headline is
+ * totalToolCalls (the true "hunting cost"), because Serena's symbol lookups
+ * show up as mcpCalls, not fileReads. Comparing fileReads alone would miss
+ * the entire Serena surface area.
+ */
+export function compareMetricsSerena(
+  baseline: TaskMetrics,
+  withBriefed: TaskMetrics,
+  taskName: string,
+): string {
+  const lines: string[] = [];
+  lines.push(`  Task: "${taskName}"`);
+  lines.push("  " + "─".repeat(70));
+  lines.push(padRow("", "Serena only", "Serena+briefed", "Delta"));
+  lines.push("  " + "─".repeat(70));
+
+  lines.push(
+    padRow(
+      "Duration",
+      `${(baseline.durationMs / 1000).toFixed(1)}s`,
+      `${(withBriefed.durationMs / 1000).toFixed(1)}s`,
+      formatDelta(baseline.durationMs, withBriefed.durationMs),
+    ),
+  );
+  lines.push(
+    padRow(
+      "Turns",
+      baseline.numTurns.toString(),
+      withBriefed.numTurns.toString(),
+      formatDelta(baseline.numTurns, withBriefed.numTurns),
+    ),
+  );
+  lines.push(
+    padRow(
+      "Total tool calls",
+      baseline.totalToolCalls.toString(),
+      withBriefed.totalToolCalls.toString(),
+      formatDelta(baseline.totalToolCalls, withBriefed.totalToolCalls),
+    ),
+  );
+  lines.push(
+    padRow(
+      "  File reads",
+      baseline.fileReads.toString(),
+      withBriefed.fileReads.toString(),
+      formatDelta(baseline.fileReads, withBriefed.fileReads),
+    ),
+  );
+  lines.push(
+    padRow(
+      "  Grep/Glob",
+      baseline.grepCalls.toString(),
+      withBriefed.grepCalls.toString(),
+      formatDelta(baseline.grepCalls, withBriefed.grepCalls),
+    ),
+  );
+  lines.push(
+    padRow(
+      "  MCP calls",
+      baseline.mcpCalls.toString(),
+      withBriefed.mcpCalls.toString(),
+      formatDelta(baseline.mcpCalls, withBriefed.mcpCalls),
+    ),
+  );
+  // Per-server MCP breakdown — shows whether briefed's own MCP is even used
+  const servers = new Set([
+    ...Object.keys(baseline.mcpCallsByServer),
+    ...Object.keys(withBriefed.mcpCallsByServer),
+  ]);
+  for (const server of servers) {
+    const b = baseline.mcpCallsByServer[server] || 0;
+    const w = withBriefed.mcpCallsByServer[server] || 0;
+    lines.push(padRow(`    ${server}`, b.toString(), w.toString(), formatDelta(b, w)));
+  }
+  lines.push(
+    padRow(
+      "Input tokens",
+      formatNumber(baseline.inputTokens),
+      formatNumber(withBriefed.inputTokens),
+      formatDelta(baseline.inputTokens, withBriefed.inputTokens),
+    ),
+  );
+  lines.push(
+    padRow(
+      "Cost",
+      `$${baseline.totalCostUsd.toFixed(4)}`,
+      `$${withBriefed.totalCostUsd.toFixed(4)}`,
+      formatDelta(baseline.totalCostUsd, withBriefed.totalCostUsd),
+    ),
+  );
+
+  lines.push("  " + "─".repeat(70));
+  return lines.join("\n");
 }
 
 /**
