@@ -1,7 +1,7 @@
 <!-- briefed:agents:start -->
 # briefed: typescript, javascript project
 Stack: typescript, javascript
-Files: 63 source files across 7 directories
+Files: 64 source files across 7 directories
 
 ## src/extract/ (30 files)
 signatures.ts ★15
@@ -99,8 +99,10 @@ route-detail.ts ★1: routeDetail — Look up API routes with optional method an
 schema-lookup.ts ★1: schemaLookup — Look up database schema models. Can list all models or drill into a specific one.
 symbol-lookup.ts ★1: symbolLookup — Look up a symbol (function, class, type, etc.) and show:
 server.ts ★1: startMcpServer
+blast-radius.test.ts: 
+find-usages.test.ts: 
 
-<!-- briefed skeleton: 36 files, ~1730 tokens -->
+<!-- briefed skeleton: 38 files, ~1742 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
 Tests: 19 source files have matching test files
 Commands:
