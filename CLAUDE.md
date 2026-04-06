@@ -144,7 +144,7 @@ Required env: config: BRIEFED_DEBUG, USERPROFILE, APPDATA
 Hot files (last 90d, touch carefully):
   - src/commands/init.ts (15 commits, 2 authors)
   - src/cli.ts (13 commits, 2 authors)
-  - src/deliver/hooks.ts (9 commits, 2 authors)
+  - src/deliver/hooks.ts (10 commits, 2 authors)
   - src/extract/routes.ts (7 commits, 2 authors)
   - src/extract/depgraph.ts (7 commits, 2 authors)
   - src/generate/index-file.ts (7 commits, 2 authors)
