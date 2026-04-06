@@ -2,10 +2,10 @@
 <!-- briefed:start -->
 # briefed: typescript, javascript project
 Stack: typescript, javascript
-Files: 69 source files across 7 directories
+Files: 72 source files across 7 directories
 
-## src/extract/ (36 files)
-signatures.ts ★13
+## src/extract/ (38 files)
+signatures.ts ★15
   interface Symbol — Extracted symbol from a source file. [2 callers]
   type SymbolKind = | "function"
   | "class"
@@ -13,12 +13,12 @@ signatures.ts ★13
   | "type"
   | "enu...
   interface ImportRef — Import reference found in a file.
-  interface FileExtraction — True for `import type { ... }` — erased at runtime, doesn't create real coupl... [12 callers]
+  interface FileExtraction — True for `import type { ... }` — erased at runtime, doesn't create real coupl... [14 callers]
   extractFile(filePath: string, _rootPath: string): FileExtraction — Extract symbols and imports from a source file. [3 callers]
 ast.ts ★2: extractWithAst — AST-based extraction for TypeScript/JavaScript files using the TS compiler API.
-depgraph.ts ★8
+depgraph.ts ★9
   interface DepGraph [7 callers]
-  buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions. [3 callers]
+  buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions. [4 callers]
 routes.ts ★6
   interface Route [2 callers]
   extractRoutes(root: string): Route[] — Extract API routes from the codebase. [4 callers]
@@ -53,6 +53,15 @@ security.ts ★2: SecurityWarning, SecurityIssueType, isSensitiveFile — Check 
 complexity.ts ★4
   interface ComplexityScore [3 callers]
   computeComplexity(extraction: FileExtraction, depGraph: DepGraph): ComplexityScore — Compute complexity score for a file. [2 callers]
+deps.ts ★3
+  interface DepInfo
+  interface DepsResult — Package name as imported (e.g. "stripe", "
+  extractDeps(root: string, extractions: FileExtraction[]): DepsResult — Extract external dependency context. Surfaces the installed version and [2 callers]
+  formatDeps(deps: DepsResult, top: number): string — Format the top dependencies for the skeleton. When Context7 is present, [2 callers]
+  __test — Exposed for tests.
+cycles.ts ★3
+  detectCycles(depGraph: DepGraph): string[][] — Detect import cycles in the dependency graph using iterative DFS. [2 callers]
+  formatCycles(cycles: string[][]): string — Format detected cycles as a skeleton section. [2 callers]
 staleness.ts ★1: StalenessReport, checkStaleness — Check if the briefed context is stale (source files changed since last index)., formatStaleness — Format staleness report for display.
 cross-layer.ts ★3
   interface RouteCall
@@ -64,7 +73,6 @@ pipeline.ts ★2
   runExtractionPipeline(root: string, scan: ScanResult, stack: StackInfo): ExtractionResult — Run all extraction steps and return the collected results.
 churn.ts ★2: FileChurn, extractChurn — Compute commit churn per file over a time window. Files that change a, formatChurn — Format the top hot files for inclusion in the skeleton.
 conventions.ts ★2: ProjectConventions, detectConventions — Auto-detect project conventions from code patterns., formatConventions — Format conventions for inclusion in CLAUDE.md or rules.
-deps.ts ★2: DepInfo, DepsResult — Package name as imported (e.g. "stripe", ", extractDeps — Extract external dependency context. Surfaces the installed version and, formatDeps — Format the top dependencies for the skeleton. When Context7 is present,, __test — Exposed for tests.
 frontend.ts ★2
   interface PageRoute
   interface ComponentInfo
@@ -73,19 +81,19 @@ frontend.ts ★2
   formatFrontend(info: FrontendInfo): string — Format frontend info for skeleton inclusion.
 infra.ts ★2: InfraInfo, InfraService, extractInfra — Extract infrastructure configuration., formatInfra — Format infra info for skeleton inclusion.
 usage-examples.ts ★2: UsageExample, findUsageExamples — Find how functions/classes are actually USED in the codebase., formatUsageExamples — Format usage examples for context injection.
-cycles.ts ★2: detectCycles — Detect import cycles in the dependency graph using iterative DFS., formatCycles — Format detected cycles as a skeleton section.
 error-patterns.ts ★1: ErrorPattern, ErrorPatternType, detectErrorPatterns — Detect the project's error handling patterns.
-history.ts ★1: FileHistory, CommitInfo, getFileHistory — Extract recent git history for files., getBatchHistory — Get history for multiple files efficiently., formatHistory — Format file history for context injection.
-tests.ts ★1: TestMapping, findTestMappings — Find test files that correspond to source files., formatTestContext — Format test mappings for inclusion in the skeleton or contracts.
+history.ts ★1: FileHistory, CommitInfo, getFileHistory — Extract recent git history for files., getBatchHistory — Get history for multiple files efficiently.
+tests.ts ★1: TestMapping, findTestMappings — Find test files that correspond to source files.
 ast.test.ts: 
 complexity.test.ts: 
+cycles.test.ts: 
 depgraph.test.ts: 
+deps.test.ts: 
 routes.test.ts: GET
 
 ## src/utils/ (7 files)
 log.ts ★9
   debug(msg: string): void — Lightweight logging utilities. [9 callers]
-  warn(msg: string): void
 pagerank.ts ★2: GraphNode — Simple PageRank implementation for dependency graph ranking., computePageRank — Compute PageRank scores for a file dependency graph., computeRefCounts — Get reference count (in-degree) for each node.
 detect.ts ★6
   interface StackInfo [2 callers]
@@ -94,13 +102,12 @@ detect.ts ★6
   PARSEABLE_EXTENSIONS — File extensions we should parse [2 callers]
   SKIP_DIRS — Directories to always skip [2 callers]
 tokens.ts ★6
+  countTokens(text: string): number — Estimate token count for a string [5 callers]
 pagerank.test.ts: 
 
-## src/mcp/ (8 files)
-
-<!-- briefed skeleton: 34 files, ~1819 tokens -->
+<!-- briefed skeleton: 36 files, ~1860 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
-Tests: 16 source files have matching test files
+Tests: 19 source files have matching test files
 Error handling:
   - Uses Result/Either types for error propagation (not exceptions)
   - Prefers try/catch wrapping over throwing
@@ -117,8 +124,8 @@ Usage examples:
   scanFiles: const scan = scanFiles(root); (plan.ts:34)
   formatTokens: console.log(`  Skeleton: ${formatTokens(skeletonTokens)} tokens`); (init.ts:72)
   formatTokens: console.log(`    Skeleton (CLAUDE.md):   ~${formatTokens(estAlwaysLoaded)} tokens (always loaded)`); (plan.ts:104)
+  buildDepGraph: const graph = buildDepGraph( (cycles.test.ts:25)
   buildDepGraph: const graph = buildDepGraph(extractions, "/project"); (depgraph.test.ts:25)
-  buildDepGraph: const depGraph = buildDepGraph(extractions, root); (pipeline.ts:147)
   extractFile: const extraction = extractFile(file.absolutePath, root); (pipeline.ts:115)
   extractFile: const result = extractFile(file, tmpDir); (signatures.test.ts:25)
   extractSchemas: schemas = extractSchemas(root); (pipeline.ts:258)
@@ -146,7 +153,7 @@ Hot files (last 90d, touch carefully):
   - src/extract/signatures.ts (6 commits, 2 authors)
   - src/bench/metrics.ts (6 commits, 2 authors)
 External deps:
-  - vitest@4.1.2 — 17 imports
+  - vitest@4.1.2 — 20 imports
   - glob@13.0.6 — 7 imports
   - @modelcontextprotocol/sdk@1.29.0 — 6 imports
   - express@5.2.1 — 2 imports
