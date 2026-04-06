@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync } from "fs";
 import { join } from "path";
 import { debug } from "../utils/log.js";
 
@@ -56,9 +56,47 @@ export function installMcpServer(root: string) {
       return false;
     }
   })();
-  settings.mcpServers["briefed"] = isBriefedRepo
-    ? { command: "node", args: [join(root, "dist", "cli.js"), "mcp", "--repo", root] }
-    : { command: "briefed", args: ["mcp", "--repo", root] };
+
+  // Resolve absolute paths for the MCP server command. macOS GUI Claude Code
+  // launches with a minimal PATH that excludes asdf/nvm/volta/fnm shim
+  // directories, so a bare `"command": "briefed"` works in the terminal but
+  // fails when Claude tries to spawn the MCP server. By writing absolute
+  // paths to node + cli.js we bypass version-manager shims entirely.
+  if (isBriefedRepo) {
+    settings.mcpServers["briefed"] = {
+      command: process.execPath, // absolute path to the running node binary
+      args: [join(root, "dist", "cli.js"), "mcp", "--repo", root],
+    };
+  } else {
+    // We're being run by an installed briefed CLI. import.meta.dirname is
+    // dist/deliver/ inside the install — walk up to find dist/cli.js and
+    // resolve it to a real absolute path that Claude Code can spawn without
+    // any PATH lookups or shim resolution.
+    let cliJsPath: string | null = null;
+    try {
+      const candidate = join(import.meta.dirname, "..", "cli.js");
+      if (existsSync(candidate)) {
+        cliJsPath = realpathSync(candidate);
+      }
+    } catch {
+      cliJsPath = null;
+    }
+
+    if (cliJsPath) {
+      settings.mcpServers["briefed"] = {
+        command: process.execPath,
+        args: [cliJsPath, "mcp", "--repo", root],
+      };
+    } else {
+      // Last-resort fallback: bare command. Better than nothing, but users
+      // on version managers launching Claude Code from the GUI will hit PATH
+      // issues and need to fix this manually.
+      settings.mcpServers["briefed"] = {
+        command: "briefed",
+        args: ["mcp", "--repo", root],
+      };
+    }
+  }
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 }
@@ -111,7 +149,7 @@ export function installHooks(root: string) {
     hooks: [
       {
         type: "command",
-        command: `node "${join(root, ".briefed", "hooks", "session-start.js")}"`,
+        command: `"${process.execPath}" "${join(root, ".briefed", "hooks", "session-start.js")}"`,
         timeout: 5,
       },
     ],
@@ -123,7 +161,7 @@ export function installHooks(root: string) {
     hooks: [
       {
         type: "command",
-        command: `node "${join(root, ".briefed", "hooks", "prompt-submit.js")}"`,
+        command: `"${process.execPath}" "${join(root, ".briefed", "hooks", "prompt-submit.js")}"`,
         timeout: 5,
       },
     ],
@@ -136,7 +174,7 @@ export function installHooks(root: string) {
     hooks: [
       {
         type: "command",
-        command: `node "${join(root, ".briefed", "hooks", "post-read.js")}"`,
+        command: `"${process.execPath}" "${join(root, ".briefed", "hooks", "post-read.js")}"`,
         timeout: 2,
       },
     ],
@@ -146,7 +184,7 @@ export function installHooks(root: string) {
     hooks: [
       {
         type: "command",
-        command: `node "${join(root, ".briefed", "hooks", "post-edit.js")}"`,
+        command: `"${process.execPath}" "${join(root, ".briefed", "hooks", "post-edit.js")}"`,
         timeout: 2,
       },
     ],
@@ -156,7 +194,7 @@ export function installHooks(root: string) {
     hooks: [
       {
         type: "command",
-        command: `node "${join(root, ".briefed", "hooks", "post-edit.js")}"`,
+        command: `"${process.execPath}" "${join(root, ".briefed", "hooks", "post-edit.js")}"`,
         timeout: 2,
       },
     ],
@@ -168,30 +206,17 @@ export function installHooks(root: string) {
     hooks: [
       {
         type: "command",
-        command: `node "${join(root, ".briefed", "hooks", "session-stop.js")}"`,
+        command: `"${process.execPath}" "${join(root, ".briefed", "hooks", "session-stop.js")}"`,
         timeout: 5,
       },
     ],
   });
 
-  // Register MCP server for on-demand context queries.
-  // Default: use the `briefed` binary in PATH (works for `npm i -g`, npx,
-  // and any normal install). Only fall back to `node <root>/dist/cli.js`
-  // when we're init'ing the briefed repo itself — detected by matching
-  // the name field in the local package.json — so dev-from-source works
-  // without needing `npm link`.
-  if (!settings.mcpServers) settings.mcpServers = {};
-  const isBriefedRepo = (() => {
-    try {
-      const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
-      return pkg.name === "briefed" && existsSync(join(root, "dist", "cli.js"));
-    } catch {
-      return false;
-    }
-  })();
-  settings.mcpServers["briefed"] = isBriefedRepo
-    ? { command: "node", args: [join(root, "dist", "cli.js"), "mcp", "--repo", root] }
-    : { command: "briefed", args: ["mcp", "--repo", root] };
+  // MCP server registration is handled by installMcpServer() — called
+  // unconditionally from writeOutputs so --skip-hooks still gets MCP. We
+  // intentionally don't touch settings.mcpServers here to avoid clobbering
+  // the absolute-path resolution that installMcpServer does for asdf/nvm/
+  // volta/fnm users.
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 }
