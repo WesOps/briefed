@@ -182,16 +182,3 @@ function extractTestNames(
 
   return { names, count: names.length };
 }
-
-/**
- * Format test mappings for inclusion in the skeleton or contracts.
- */
-export function formatTestContext(mapping: TestMapping): string {
-  const lines: string[] = [];
-  lines.push(`tests: ${mapping.testFile} (${mapping.testCount} tests)`);
-  if (mapping.testNames.length > 0) {
-    const preview = mapping.testNames.slice(0, 8);
-    lines.push(`  covers: ${preview.join(", ")}${mapping.testNames.length > 8 ? ` +${mapping.testNames.length - 8} more` : ""}`);
-  }
-  return lines.join("\n");
-}

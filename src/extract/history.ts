@@ -93,20 +93,6 @@ export function getBatchHistory(
 }
 
 /**
- * Format file history for context injection.
- */
-export function formatHistory(history: FileHistory): string {
-  if (history.recentCommits.length === 0) return "";
-
-  const lines: string[] = [];
-  lines.push(`recent_changes: ${history.changeFrequency} commits in 30 days`);
-  for (const commit of history.recentCommits.slice(0, 3)) {
-    lines.push(`  - ${commit.message} (${commit.date.split(" ")[0]})`);
-  }
-  return lines.join("\n");
-}
-
-/**
  * Filter out trivial/noisy commit messages.
  */
 function isTrivialCommit(message: string): boolean {
