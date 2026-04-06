@@ -125,7 +125,7 @@ Usage examples:
   extractSchemas: const schemas = extractSchemas(root); (blast-radius.ts:54)
   extractRoutes: routes = extractRoutes(root); (pipeline.ts:238)
   extractRoutes: const routes = extractRoutes(root); (blast-radius.ts:48)
-  removeGitHook: removeGitHook(root); (cli.ts:67)
+  removeGitHook: removeGitHook(root); (cli.ts:69)
   removeGitHook: removeGitHook(tmpDir); (git-hook.test.ts:82)
 Commands:
   build: tsc
