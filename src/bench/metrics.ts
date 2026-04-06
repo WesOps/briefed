@@ -56,19 +56,34 @@ export function parseResult(filePath: string): TaskMetrics {
   if (!data && entries.length > 0) data = entries[entries.length - 1];
   if (!data) throw new Error("No valid JSON found in transcript");
 
-  const usage = (typeof data.usage === "object" && data.usage !== null ? data.usage : {}) as Record<string, unknown>;
-
   const num = (v: unknown): number => (typeof v === "number" ? v : 0);
   const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
-  // Count tool_use blocks across all entries.
-  // Tool use blocks live at entry.message.content[].{type:"tool_use",name,input}
-  // for assistant messages in the streaming format.
+  // Walk every assistant message in the stream and accumulate per-turn token
+  // usage AND tool_use calls. The result event's usage only reflects the final
+  // turn, so summing across turns is the only way to get the true volume Claude
+  // processed across the whole task.
+  let sumInput = 0;
+  let sumOutput = 0;
+  let sumCacheCreation = 0;
+  let sumCacheRead = 0;
   let fileReads = 0;
   let fileEdits = 0;
   const filesRead = new Set<string>();
+
   for (const entry of entries) {
-    const message = (entry.message as Record<string, unknown> | undefined);
+    const message = entry.message as Record<string, unknown> | undefined;
+
+    // Per-turn usage on assistant messages
+    const turnUsage = message?.usage as Record<string, unknown> | undefined;
+    if (turnUsage && typeof turnUsage === "object") {
+      sumInput += num(turnUsage.input_tokens);
+      sumOutput += num(turnUsage.output_tokens);
+      sumCacheCreation += num(turnUsage.cache_creation_input_tokens);
+      sumCacheRead += num(turnUsage.cache_read_input_tokens);
+    }
+
+    // Tool use blocks live at entry.message.content[].{type:"tool_use",...}
     const contents = Array.isArray(message?.content)
       ? (message.content as Record<string, unknown>[])
       : Array.isArray(entry.content)
@@ -88,13 +103,26 @@ export function parseResult(filePath: string): TaskMetrics {
     }
   }
 
+  // Fallback: if no per-turn usage was found (e.g. plain --output-format json),
+  // read the cumulative usage off the result event.
+  const resultUsage = (typeof data.usage === "object" && data.usage !== null ? data.usage : {}) as Record<string, unknown>;
+  if (sumInput === 0 && sumOutput === 0) {
+    sumInput = num(resultUsage.input_tokens);
+    sumOutput = num(resultUsage.output_tokens);
+    sumCacheCreation = num(resultUsage.cache_creation_input_tokens);
+    sumCacheRead = num(resultUsage.cache_read_input_tokens);
+  }
+
   return {
     durationMs: num(data.duration_ms),
     numTurns: num(data.num_turns),
-    inputTokens: num(usage.input_tokens),
-    outputTokens: num(usage.output_tokens),
-    cacheCreationTokens: num(usage.cache_creation_input_tokens),
-    cacheReadTokens: num(usage.cache_read_input_tokens),
+    // True volume Claude had to ingest across the whole task: fresh input plus
+    // anything it read from or wrote to its prompt cache. This is what users
+    // intuitively mean by "input tokens" when comparing runs.
+    inputTokens: sumInput + sumCacheRead + sumCacheCreation,
+    outputTokens: sumOutput,
+    cacheCreationTokens: sumCacheCreation,
+    cacheReadTokens: sumCacheRead,
     totalCostUsd: num(data.total_cost_usd),
     resultLength: str(data.result).length,
     sessionId: str(data.session_id),
@@ -153,7 +181,7 @@ export function compareMetrics(
       "Output tokens",
       formatNumber(without.outputTokens),
       formatNumber(withCctx.outputTokens),
-      formatDelta(without.outputTokens, withCctx.outputTokens, true)
+      formatDelta(without.outputTokens, withCctx.outputTokens)
     )
   );
 
@@ -272,7 +300,7 @@ export function compareMetrics3(
       formatNumber(without.outputTokens),
       formatNumber(withCctx.outputTokens),
       formatNumber(withDeep.outputTokens),
-      formatDelta(without.outputTokens, withDeep.outputTokens, true),
+      formatDelta(without.outputTokens, withDeep.outputTokens),
     ),
   );
   lines.push(

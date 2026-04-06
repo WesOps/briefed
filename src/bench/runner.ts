@@ -266,9 +266,23 @@ function runClaudeTask(claudePath: string, cwd: string, prompt: string, outputPa
   // argument is tokenized by whitespace, so "Read the files..." becomes
   // just "Read". On Windows we need shell:true for .cmd files, so detect.
   const isWindows = process.platform === "win32";
+  // stream-json (NDJSON) is required to capture per-turn assistant messages
+  // with their tool_use blocks and per-turn usage; the plain "json" format only
+  // emits the final result object, which loses tool calls and reports only the
+  // last turn's token usage.
   const result = spawnSync(
     claudePath,
-    ["-p", prompt, "--output-format", "json", "--max-turns", "20", "--permission-mode", "acceptEdits"],
+    [
+      "-p",
+      prompt,
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--max-turns",
+      "20",
+      "--permission-mode",
+      "acceptEdits",
+    ],
     { cwd, stdio: ["pipe", "pipe", "pipe"], timeout: timeoutMs, encoding: "utf-8", shell: isWindows }
   );
   if (result.error) throw new Error(`CLI failed: ${result.error.message}`);
