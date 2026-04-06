@@ -10,6 +10,8 @@ interface BenchOptions {
   withoutOnly?: boolean;
   reportOnly?: boolean;
   output?: string;
+  timeout?: string;
+  resume?: boolean;
 }
 
 export async function benchCommand(opts: BenchOptions) {
@@ -23,6 +25,8 @@ export async function benchCommand(opts: BenchOptions) {
     skipWithout: opts.withOnly || opts.reportOnly,
     skipWith: opts.withoutOnly || opts.reportOnly,
     outputDir: opts.output,
+    timeoutMs: opts.timeout ? parseInt(opts.timeout, 10) * 1000 : undefined,
+    resume: opts.resume,
   });
 
   const report = generateReport(results);

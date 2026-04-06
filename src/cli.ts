@@ -56,6 +56,8 @@ program
   .option("--without-only", "Only run WITHOUT briefed")
   .option("--report-only", "Just generate report from existing transcripts")
   .option("--output <dir>", "Output directory for transcripts")
+  .option("--timeout <seconds>", "Per-task timeout in seconds (default 600)")
+  .option("--no-resume", "Re-run tasks even if cached results exist")
   .action(benchCommand);
 
 program

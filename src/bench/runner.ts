@@ -45,6 +45,8 @@ export interface RunOptions {
   skipWithout?: boolean;
   skipWith?: boolean;
   maxTasks?: number;
+  timeoutMs?: number;
+  resume?: boolean;
 }
 
 /**
@@ -54,6 +56,8 @@ export async function runBenchmark(opts: RunOptions): Promise<BenchResult[]> {
   const root = resolve(opts.repo);
   const tasks = (opts.tasks || DEFAULT_TASKS).slice(0, opts.maxTasks || 3);
   const outputDir = resolve(opts.outputDir || join(root, ".briefed", "bench"));
+  const timeoutMs = opts.timeoutMs || 600_000;
+  const resume = opts.resume !== false;
 
   mkdirSync(join(outputDir, "without"), { recursive: true });
   mkdirSync(join(outputDir, "with"), { recursive: true });
@@ -91,11 +95,16 @@ export async function runBenchmark(opts: RunOptions): Promise<BenchResult[]> {
 
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
+      const out = join(outputDir, "without", `${task.name}.json`);
+      if (resume && existsSync(out)) {
+        console.log(`  [${i + 1}/${tasks.length}] ${task.name} (cached, skipping)`);
+        continue;
+      }
       console.log(`  [${i + 1}/${tasks.length}] ${task.name}`);
 
       try {
-        runClaudeTask(claudePath, root, task.prompt, join(outputDir, "without", `${task.name}.json`));
-        const m = parseResult(join(outputDir, "without", `${task.name}.json`));
+        runClaudeTask(claudePath, root, task.prompt, out, timeoutMs);
+        const m = parseResult(out);
         console.log(`    ${(m.durationMs / 1000).toFixed(1)}s, ${m.numTurns} turns, ${m.inputTokens + m.outputTokens} tokens`);
       } catch (e) {
         console.error(`    Error: ${(e as Error).message.slice(0, 100)}`);
@@ -117,11 +126,16 @@ export async function runBenchmark(opts: RunOptions): Promise<BenchResult[]> {
 
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
+      const out = join(outputDir, "with", `${task.name}.json`);
+      if (resume && existsSync(out)) {
+        console.log(`  [${i + 1}/${tasks.length}] ${task.name} (cached, skipping)`);
+        continue;
+      }
       console.log(`  [${i + 1}/${tasks.length}] ${task.name}`);
 
       try {
-        runClaudeTask(claudePath, root, task.prompt, join(outputDir, "with", `${task.name}.json`));
-        const m = parseResult(join(outputDir, "with", `${task.name}.json`));
+        runClaudeTask(claudePath, root, task.prompt, out, timeoutMs);
+        const m = parseResult(out);
         console.log(`    ${(m.durationMs / 1000).toFixed(1)}s, ${m.numTurns} turns, ${m.inputTokens + m.outputTokens} tokens`);
       } catch (e) {
         console.error(`    Error: ${(e as Error).message.slice(0, 100)}`);
@@ -193,7 +207,7 @@ function findClaude(): string | null {
   return null;
 }
 
-function runClaudeTask(claudePath: string, cwd: string, prompt: string, outputPath: string) {
+function runClaudeTask(claudePath: string, cwd: string, prompt: string, outputPath: string, timeoutMs: number) {
   // Important: do NOT use shell:true here. With shell:true, the prompt
   // argument is tokenized by whitespace, so "Read the files..." becomes
   // just "Read". On Windows we need shell:true for .cmd files, so detect.
@@ -201,7 +215,7 @@ function runClaudeTask(claudePath: string, cwd: string, prompt: string, outputPa
   const result = spawnSync(
     claudePath,
     ["-p", prompt, "--output-format", "json", "--max-turns", "20", "--permission-mode", "acceptEdits"],
-    { cwd, stdio: ["pipe", "pipe", "pipe"], timeout: 300_000, encoding: "utf-8", shell: isWindows }
+    { cwd, stdio: ["pipe", "pipe", "pipe"], timeout: timeoutMs, encoding: "utf-8", shell: isWindows }
   );
   if (result.error) throw new Error(`CLI failed: ${result.error.message}`);
   if (result.stdout?.trim()) {
