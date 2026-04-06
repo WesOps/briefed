@@ -1,6 +1,8 @@
 import { loadCachedExtractions } from "./cached-loader.js";
 import { extractRoutes } from "../extract/routes.js";
 import { extractSchemas } from "../extract/schema.js";
+import { extractRouteCalls } from "../extract/cross-layer.js";
+import { scanFiles } from "../extract/scanner.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 /**
@@ -101,6 +103,21 @@ export function blastRadius(root: string, file: string): CallToolResult {
       lines.push(`- ${r.method} ${r.path} → \`${r.file}\`${r.middleware.length > 0 ? ` [${r.middleware.join(", ")}]` : ""}`);
     }
     lines.push("");
+
+    // Cross-layer: which frontend files call these affected routes?
+    const scan = scanFiles(root);
+    const crossLayer = extractRouteCalls(root, scan, routes);
+    const affectedFrontend = new Set<string>();
+    for (const route of affectedRoutes) {
+      const callers = crossLayer.routeCallers.get(`${route.method} ${route.path}`) || [];
+      for (const caller of callers) affectedFrontend.add(caller);
+    }
+    if (affectedFrontend.size > 0) {
+      lines.push(`### Affected frontend callers (${affectedFrontend.size})`);
+      lines.push("These files make HTTP calls to the affected routes:");
+      for (const f of affectedFrontend) lines.push(`- \`${f}\``);
+      lines.push("");
+    }
   }
 
   if (affectedModels.length > 0) {

@@ -26,7 +26,6 @@ program
   .option("--max-tokens <n>", "Token budget for skeleton (default: auto-scaled by project size)", "auto")
   .option("--skip-hooks", "Skip hook installation")
   .option("--skip-rules", "Skip .claude/rules/ generation")
-  .option("--fast", "Skip Claude-powered deep analysis (static-only, instant)")
   .action(initCommand);
 
 program
@@ -51,8 +50,8 @@ program
   .command("bench")
   .description("Benchmark briefed vs default Claude Code (uses your subscription)")
   .option("--repo <path>", "Repository to benchmark", ".")
-  .option("--quick", "Run 3 tasks (fastest)")
-  .option("--full", "Run 10 tasks (most thorough)")
+  .option("--quick", "Run 2 tasks (fastest)")
+  .option("--full", "Run all 5 tasks (most thorough)")
   .option("--with-only", "Only run WITH briefed (skip without)")
   .option("--without-only", "Only run WITHOUT briefed")
   .option("--report-only", "Just generate report from existing transcripts")
@@ -71,7 +70,7 @@ program
 
 program
   .command("mcp")
-  .description("Start MCP server (blast-radius, schema, routes) for AI tools")
+  .description("Start MCP server (blast-radius, symbol, schema, routes) for AI tools")
   .option("--repo <path>", "Repository root path", ".")
   .action(async (opts: { repo: string }) => {
     await startMcpServer(opts.repo);

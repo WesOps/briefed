@@ -17,6 +17,7 @@ import { extractEnvVars } from "./env.js";
 import { extractScripts } from "./scripts.js";
 import { extractFrontend } from "./frontend.js";
 import { extractInfra } from "./infra.js";
+import { extractRouteCalls } from "./cross-layer.js";
 import { isSensitiveFile } from "./security.js";
 import type { FileExtraction } from "./signatures.js";
 import type { DepGraph } from "./depgraph.js";
@@ -33,6 +34,7 @@ import type { EnvVar } from "./env.js";
 import type { ProjectScripts } from "./scripts.js";
 import type { FrontendInfo } from "./frontend.js";
 import type { InfraInfo } from "./infra.js";
+import type { CrossLayerGraph } from "./cross-layer.js";
 import type { ScanResult } from "./scanner.js";
 import type { StackInfo } from "../utils/detect.js";
 
@@ -53,6 +55,7 @@ export interface ExtractionResult {
   scripts: ProjectScripts;
   frontend: FrontendInfo;
   infra: InfraInfo;
+  crossLayer: CrossLayerGraph;
 }
 
 /**
@@ -254,6 +257,17 @@ export function runExtractionPipeline(
     console.log(`  Frontend: ${frontend.framework}, ${frontend.pages.length} pages, ${frontend.components.length} components`);
   }
 
+  // Cross-layer graph — only if BOTH frontend and backend routes exist
+  let crossLayer: CrossLayerGraph = { routeCalls: [], routeCallers: new Map() };
+  if (hasFrontend && routes.length > 0) {
+    console.log("  Mapping cross-layer (frontend → backend)...");
+    crossLayer = extractRouteCalls(root, scan, routes);
+    if (crossLayer.routeCalls.length > 0) {
+      const matched = crossLayer.routeCalls.filter((c) => c.matchedRoute).length;
+      console.log(`  Found ${crossLayer.routeCalls.length} HTTP calls (${matched} matched to routes)`);
+    }
+  }
+
   // Infra — only if infra files detected
   let infra: InfraInfo = {
     services: [], ports: [], volumes: [], networks: [], providers: [], deployment: null
@@ -281,5 +295,6 @@ export function runExtractionPipeline(
     scripts,
     frontend,
     infra,
+    crossLayer,
   };
 }

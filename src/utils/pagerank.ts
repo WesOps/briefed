@@ -7,6 +7,8 @@ export interface GraphNode {
   id: string;
   outEdges: string[]; // files this node imports
   inEdges: string[];  // files that import this node
+  /** Edge weights: target file → number of symbols imported (higher = stronger coupling) */
+  edgeWeights?: Map<string, number>;
 }
 
 /**
@@ -39,7 +41,15 @@ export function computePageRank(
         const sourceNode = nodes.get(sourceId);
         if (sourceNode && sourceNode.outEdges.length > 0) {
           const sourceScore = scores.get(sourceId) || 0;
-          incomingScore += sourceScore / sourceNode.outEdges.length;
+          // Use edge weights if available: distribute score proportional to symbol count
+          const weights = sourceNode.edgeWeights;
+          if (weights && weights.size > 0) {
+            const totalWeight = [...weights.values()].reduce((a, b) => a + b, 0);
+            const edgeWeight = weights.get(id) || 1;
+            incomingScore += sourceScore * (edgeWeight / totalWeight);
+          } else {
+            incomingScore += sourceScore / sourceNode.outEdges.length;
+          }
         }
       }
       newScores.set(id, base + damping * incomingScore);

@@ -13,6 +13,7 @@ import { formatEnvVars } from "../extract/env.js";
 import { formatScripts } from "../extract/scripts.js";
 import { formatFrontend } from "../extract/frontend.js";
 import { formatInfra } from "../extract/infra.js";
+import { formatRouteCalls } from "../extract/cross-layer.js";
 import { writeOutputs } from "../deliver/output.js";
 import { countTokens, formatTokens } from "../utils/tokens.js";
 
@@ -102,6 +103,8 @@ export async function initCommand(opts: InitOptions) {
   if (frontendText) enrichedSkeleton += "\n" + frontendText;
   const infraText = formatInfra(result.infra);
   if (infraText) enrichedSkeleton += "\n" + infraText;
+  const crossLayerText = formatRouteCalls(result.crossLayer);
+  if (crossLayerText) enrichedSkeleton += "\n" + crossLayerText;
 
   // Step 7: Write all outputs
   const outputSummary = writeOutputs(root, result, enrichedSkeleton, convText, {

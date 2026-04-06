@@ -281,12 +281,14 @@ function padRow(label: string, col1: string, col2: string, col3: string): string
   return `  ${label.padEnd(18)} ${col1.padStart(14)} ${col2.padStart(14)} ${col3.padStart(10)}`;
 }
 
-function formatDelta(before: number, after: number, _higherIsBetter = false): string {
+function formatDelta(before: number, after: number, higherIsBetter = false): string {
   if (before === 0 && after === 0) return "—";
   if (before === 0) return `+${after}`;
   const pct = Math.round(((after - before) / before) * 100);
   const sign = pct >= 0 ? "+" : "";
-  return `${sign}${pct}%`;
+  const good = higherIsBetter ? pct > 0 : pct < 0;
+  const indicator = pct === 0 ? "" : good ? " ✓" : " ✗";
+  return `${sign}${pct}%${indicator}`;
 }
 
 function formatNumber(n: number): string {
