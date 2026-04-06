@@ -1,22 +1,22 @@
 <!-- briefed:agents:start -->
 # briefed: typescript, javascript project
 Stack: typescript, javascript
-Files: 72 source files across 7 directories
+Files: 73 source files across 7 directories
 
-## src/extract/ (38 files)
-signatures.ts ★15
-  interface Symbol — Extracted symbol from a source file. [2 callers]
+## src/extract/ (39 files)
+signatures.ts ★16
+  interface Symbol — Extracted symbol from a source file. [3 callers]
   type SymbolKind = | "function"
   | "class"
   | "interface"
   | "type"
   | "enu...
   interface ImportRef — Import reference found in a file.
-  interface FileExtraction — True for `import type { ... }` — erased at runtime, doesn't create real coupl... [14 callers]
+  interface FileExtraction — True for `import type { ... }` — erased at runtime, doesn't create real coupl... [15 callers]
   extractFile(filePath: string, _rootPath: string): FileExtraction — Extract symbols and imports from a source file. [3 callers]
 ast.ts ★2: extractWithAst — AST-based extraction for TypeScript/JavaScript files using the TS compiler API.
-depgraph.ts ★9
-  interface DepGraph [7 callers]
+depgraph.ts ★10
+  interface DepGraph [8 callers]
   buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions. [4 callers]
 routes.ts ★6
   interface Route [2 callers]
@@ -86,25 +86,27 @@ tests.ts ★1: TestMapping, findTestMappings — Find test files that correspond
 ast.test.ts: 
 complexity.test.ts: 
 cycles.test.ts: 
+deep.ts
+  interface DeepResult — Deep analysis: use `claude -p` (the user's Claude Code subscription, $0
+  runDeepAnalysis(extractions: FileExtraction[], depGraph: DepGraph, root: string): Promise<DeepResult>
+  mergeDeepAnnotations(extractions: FileExtraction[], annotations: Map<string, Map<string, string>>): number — Merge deep annotations into the extraction symbols so the skeleton
+  __test — Exposed for tests.
 depgraph.test.ts: 
 deps.test.ts: 
 routes.test.ts: GET
 
 ## src/utils/ (7 files)
-log.ts ★9
-  debug(msg: string): void — Lightweight logging utilities. [9 callers]
+log.ts ★10
+  debug(msg: string): void — Lightweight logging utilities. [10 callers]
 pagerank.ts ★2: GraphNode — Simple PageRank implementation for dependency graph ranking., computePageRank — Compute PageRank scores for a file dependency graph., computeRefCounts — Get reference count (in-degree) for each node.
 detect.ts ★6
   interface StackInfo [2 callers]
-  detectStack(root: string): StackInfo — Detect the project's tech stack from config files [3 callers]
-  extToLanguage(ext: string): string | null — Map file extension to language name
-  PARSEABLE_EXTENSIONS — File extensions we should parse [2 callers]
-  SKIP_DIRS — Directories to always skip [2 callers]
 tokens.ts ★6
-  countTokens(text: string): number — Estimate token count for a string [5 callers]
 pagerank.test.ts: 
 
-<!-- briefed skeleton: 36 files, ~1860 tokens -->
+## src/mcp/ (9 files)
+
+<!-- briefed skeleton: 37 files, ~1873 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
 Tests: 19 source files have matching test files
 Error handling:
@@ -144,13 +146,13 @@ Hot files (last 90d, touch carefully):
   - src/commands/init.ts (15 commits, 2 authors)
   - src/cli.ts (13 commits, 2 authors)
   - src/deliver/hooks.ts (10 commits, 2 authors)
+  - src/extract/deep.ts (8 commits, 2 authors)
   - src/extract/routes.ts (7 commits, 2 authors)
   - src/extract/depgraph.ts (7 commits, 2 authors)
   - src/generate/index-file.ts (7 commits, 2 authors)
   - src/generate/skeleton.ts (7 commits, 2 authors)
   - src/extract/pipeline.ts (6 commits, 2 authors)
   - src/extract/signatures.ts (6 commits, 2 authors)
-  - src/bench/metrics.ts (6 commits, 2 authors)
 External deps:
   - vitest@4.1.2 — 20 imports
   - glob@13.0.6 — 7 imports
