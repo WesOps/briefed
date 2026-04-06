@@ -193,8 +193,77 @@ export async function runDeepAnalysis(
 }
 
 /**
- * Merge deep annotations into the extraction symbols so the skeleton
- * formatter picks them up automatically. Mutates `extractions`.
+ * Build per-directory rule files that Claude Code loads only when it
+ * touches files in that directory. This is how the original `--deep`
+ * shipped in v0.3.0: path-scoped, not always-loaded.
+ *
+ * Returns: Map<filename, file content>. Caller writes these into
+ * .claude/rules/.
+ */
+export function buildDeepRules(
+  extractions: FileExtraction[],
+  annotations: Map<string, Map<string, string>>,
+): Map<string, string> {
+  const rules = new Map<string, string>();
+
+  // Group annotated files by directory
+  type FileEntry = {
+    file: string;
+    symbols: Array<{ name: string; sig: string; desc: string }>;
+  };
+  const byDir = new Map<string, FileEntry[]>();
+
+  for (const ext of extractions) {
+    const fileAnns = annotations.get(ext.path);
+    if (!fileAnns || fileAnns.size === 0) continue;
+
+    const dir = dirname(ext.path);
+    if (!byDir.has(dir)) byDir.set(dir, []);
+
+    const syms: FileEntry["symbols"] = [];
+    for (const sym of ext.symbols) {
+      const desc = fileAnns.get(sym.name);
+      if (desc) {
+        syms.push({ name: sym.name, sig: sym.signature, desc });
+      }
+    }
+    if (syms.length > 0) {
+      byDir.get(dir)!.push({ file: ext.path, symbols: syms });
+    }
+  }
+
+  for (const [dir, files] of byDir) {
+    const safeDir = dir.replace(/[\/\\]/g, "-").replace(/^-/, "") || "root";
+    const fileName = `briefed-deep-${safeDir}.md`;
+
+    const lines: string[] = [];
+    lines.push("---");
+    lines.push("paths:");
+    lines.push(`  - "${dir}/**"`);
+    lines.push("---");
+    lines.push("");
+    lines.push(`# ${dir}/ — behavioral context`);
+    lines.push("");
+    for (const entry of files) {
+      const fname = entry.file.split("/").pop() || entry.file;
+      lines.push(`## ${fname}`);
+      for (const sym of entry.symbols) {
+        lines.push(`- **${sym.name}**: ${sym.desc}`);
+      }
+      lines.push("");
+    }
+
+    rules.set(fileName, lines.join("\n"));
+  }
+
+  return rules;
+}
+
+/**
+ * Merge deep annotations into the extraction symbols. Only used when we
+ * want the descriptions surfaced in the always-loaded skeleton — which is
+ * NOT the default. The preferred delivery is path-scoped rules via
+ * buildDeepRules.
  */
 export function mergeDeepAnnotations(
   extractions: FileExtraction[],
@@ -481,5 +550,3 @@ export const __test = {
   scoreFile,
 };
 
-// Unused imports safety: keep dirname referenced so tree-shaking doesn't whine
-void dirname;

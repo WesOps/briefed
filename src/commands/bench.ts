@@ -12,6 +12,7 @@ interface BenchOptions {
   output?: string;
   timeout?: string;
   resume?: boolean;
+  compareDeep?: boolean;
 }
 
 export async function benchCommand(opts: BenchOptions) {
@@ -27,6 +28,7 @@ export async function benchCommand(opts: BenchOptions) {
     outputDir: opts.output,
     timeoutMs: opts.timeout ? parseInt(opts.timeout, 10) * 1000 : undefined,
     resume: opts.resume,
+    compareDeep: opts.compareDeep,
   });
 
   const report = generateReport(results);

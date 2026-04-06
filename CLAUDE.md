@@ -2,18 +2,18 @@
 <!-- briefed:start -->
 # briefed: typescript, javascript project
 Stack: typescript, javascript
-Files: 73 source files across 7 directories
+Files: 74 source files across 7 directories
 
-## src/extract/ (39 files)
-signatures.ts ★16
-  interface Symbol — Extracted symbol from a source file. [3 callers]
+## src/extract/ (40 files)
+signatures.ts ★17
+  interface Symbol — Extracted symbol from a source file. [4 callers]
   type SymbolKind = | "function"
   | "class"
   | "interface"
   | "type"
   | "enu...
   interface ImportRef — Import reference found in a file.
-  interface FileExtraction — True for `import type { ... }` — erased at runtime, doesn't create real coupl... [15 callers]
+  interface FileExtraction — True for `import type { ... }` — erased at runtime, doesn't create real coupl... [16 callers]
   extractFile(filePath: string, _rootPath: string): FileExtraction — Extract symbols and imports from a source file. [3 callers]
 ast.ts ★2: extractWithAst — AST-based extraction for TypeScript/JavaScript files using the TS compiler API.
 depgraph.ts ★10
@@ -59,6 +59,12 @@ deps.ts ★3
   extractDeps(root: string, extractions: FileExtraction[]): DepsResult — Extract external dependency context. Surfaces the installed version and [2 callers]
   formatDeps(deps: DepsResult, top: number): string — Format the top dependencies for the skeleton. When Context7 is present, [2 callers]
   __test — Exposed for tests.
+deep.ts ★2
+  interface DeepResult — Deep analysis: use `claude -p` (the user's Claude Code subscription, $0
+  runDeepAnalysis(extractions: FileExtraction[], depGraph: DepGraph, root: string): Promise<DeepResult>
+  buildDeepRules(extractions: FileExtraction[], annotations: Map<string, Map<string, string>>): Map<string, string> — Build per-directory rule files that Claude Code loads only when it [2 callers]
+  mergeDeepAnnotations(extractions: FileExtraction[], annotations: Map<string, Map<string, string>>): number — Merge deep annotations into the extraction symbols. Only used when we
+  __test — Exposed for tests.
 cycles.ts ★3
   detectCycles(depGraph: DepGraph): string[][] — Detect import cycles in the dependency graph using iterative DFS. [2 callers]
   formatCycles(cycles: string[][]): string — Format detected cycles as a skeleton section. [2 callers]
@@ -87,11 +93,7 @@ tests.ts ★1: TestMapping, findTestMappings — Find test files that correspond
 ast.test.ts: 
 complexity.test.ts: 
 cycles.test.ts: 
-deep.ts
-  interface DeepResult — Deep analysis: use `claude -p` (the user's Claude Code subscription, $0
-  runDeepAnalysis(extractions: FileExtraction[], depGraph: DepGraph, root: string): Promise<DeepResult>
-  mergeDeepAnnotations(extractions: FileExtraction[], annotations: Map<string, Map<string, string>>): number — Merge deep annotations into the extraction symbols so the skeleton
-  __test — Exposed for tests.
+deep.test.ts: 
 depgraph.test.ts: 
 deps.test.ts: 
 routes.test.ts: GET
@@ -100,16 +102,10 @@ routes.test.ts: GET
 log.ts ★10
   debug(msg: string): void — Lightweight logging utilities. [10 callers]
 pagerank.ts ★2: GraphNode — Simple PageRank implementation for dependency graph ranking., computePageRank — Compute PageRank scores for a file dependency graph., computeRefCounts — Get reference count (in-degree) for each node.
-detect.ts ★6
-  interface StackInfo [2 callers]
-tokens.ts ★6
-pagerank.test.ts: 
 
-## src/mcp/ (9 files)
-
-<!-- briefed skeleton: 37 files, ~1873 tokens -->
+<!-- briefed skeleton: 35 files, ~1904 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
-Tests: 19 source files have matching test files
+Tests: 20 source files have matching test files
 Error handling:
   - Uses Result/Either types for error propagation (not exceptions)
   - Prefers try/catch wrapping over throwing
@@ -117,14 +113,14 @@ Error handling:
   - Uses schema validation (Zod/Joi/Yup) for input validation
 Usage examples:
   countTokens: const tokens = countTokens(content); (doctor.ts:30)
-  countTokens: const skeletonTokens = countTokens(skeleton); (init.ts:71)
-  detectMonorepo: const mono = detectMonorepo(root); (init.ts:37)
+  countTokens: const skeletonTokens = countTokens(skeleton); (init.ts:88)
+  detectMonorepo: const mono = detectMonorepo(root); (init.ts:40)
   detectMonorepo: const mono = detectMonorepo(root); (plan.ts:24)
-  detectStack: const stack = detectStack(root); (init.ts:46)
+  detectStack: const stack = detectStack(root); (init.ts:49)
   detectStack: const stack = detectStack(root); (plan.ts:30)
-  scanFiles: const scan = scanFiles(root); (init.ts:51)
+  scanFiles: const scan = scanFiles(root); (init.ts:54)
   scanFiles: const scan = scanFiles(root); (plan.ts:34)
-  formatTokens: console.log(`  Skeleton: ${formatTokens(skeletonTokens)} tokens`); (init.ts:72)
+  formatTokens: console.log(`  Skeleton: ${formatTokens(skeletonTokens)} tokens`); (init.ts:89)
   formatTokens: console.log(`    Skeleton (CLAUDE.md):   ~${formatTokens(estAlwaysLoaded)} tokens (always loaded)`); (plan.ts:104)
   buildDepGraph: const graph = buildDepGraph( (cycles.test.ts:25)
   buildDepGraph: const graph = buildDepGraph(extractions, "/project"); (depgraph.test.ts:25)
@@ -155,7 +151,7 @@ Hot files (last 90d, touch carefully):
   - src/extract/pipeline.ts (6 commits, 2 authors)
   - src/extract/signatures.ts (6 commits, 2 authors)
 External deps:
-  - vitest@4.1.2 — 20 imports
+  - vitest@4.1.2 — 21 imports
   - glob@13.0.6 — 7 imports
   - @modelcontextprotocol/sdk@1.29.0 — 6 imports
   - express@5.2.1 — 2 imports

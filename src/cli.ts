@@ -26,6 +26,7 @@ program
   .option("--max-tokens <n>", "Token budget for skeleton (default: auto-scaled by project size)", "auto")
   .option("--skip-hooks", "Skip hook installation")
   .option("--skip-rules", "Skip .claude/rules/ generation")
+  .option("--deep", "LLM-powered behavioral descriptions via `claude -p` subscription (path-scoped rules + system overview). Cached by SHA256, so re-runs are near-free.")
   .action(initCommand);
 
 program
@@ -58,6 +59,7 @@ program
   .option("--output <dir>", "Output directory for transcripts")
   .option("--timeout <seconds>", "Per-task timeout in seconds (default 600)")
   .option("--no-resume", "Re-run tasks even if cached results exist")
+  .option("--compare-deep", "Also run a third arm with `briefed init --deep` (LLM-annotated rules via claude -p)")
   .action(benchCommand);
 
 program

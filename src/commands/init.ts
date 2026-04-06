@@ -1,4 +1,5 @@
-import { resolve } from "path";
+import { resolve, join } from "path";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { detectStack } from "../utils/detect.js";
 import { scanFiles } from "../extract/scanner.js";
 import { detectMonorepo } from "../extract/monorepo.js";
@@ -17,6 +18,7 @@ import { formatRouteCalls } from "../extract/cross-layer.js";
 import { formatChurn } from "../extract/churn.js";
 import { formatCycles } from "../extract/cycles.js";
 import { formatDeps } from "../extract/deps.js";
+import { runDeepAnalysis, buildDeepRules } from "../extract/deep.js";
 import { writeOutputs } from "../deliver/output.js";
 import { countTokens, formatTokens } from "../utils/tokens.js";
 
@@ -25,6 +27,7 @@ interface InitOptions {
   maxTokens: string;
   skipHooks?: boolean;
   skipRules?: boolean;
+  deep?: boolean;
 }
 
 export async function initCommand(opts: InitOptions) {
@@ -57,6 +60,20 @@ export async function initCommand(opts: InitOptions) {
 
   // Step 3: Run all extraction steps
   const result = runExtractionPipeline(root, scan, stack);
+
+  // Step 3.5: Optional LLM-powered behavioral descriptions via `claude -p`.
+  // Delivered as path-scoped rules (not merged into the always-loaded
+  // skeleton) so unrelated prompts pay zero extra tokens.
+  let deepSystemOverview: string | null = null;
+  let deepRules: Map<string, string> = new Map();
+  if (opts.deep) {
+    console.log("  Running deep analysis (LLM-powered behavioral descriptions)...");
+    const deepResult = await runDeepAnalysis(result.extractions, result.depGraph, root);
+    if (deepResult.ran && deepResult.annotations.size > 0) {
+      deepSystemOverview = deepResult.systemOverview;
+      deepRules = buildDeepRules(result.extractions, deepResult.annotations);
+    }
+  }
 
   // Step 4: Generate skeleton and enrich it
   // Auto-scale token budget: small projects get 800, large ones up to 3000
@@ -116,11 +133,29 @@ export async function initCommand(opts: InitOptions) {
   const depsText = formatDeps(result.deps);
   if (depsText) enrichedSkeleton += "\n" + depsText;
 
+  // System overview from deep analysis goes at the top of the skeleton
+  // (small, high-signal, worth always-loading).
+  if (deepSystemOverview) {
+    enrichedSkeleton =
+      `## System overview\n\n${deepSystemOverview}\n\n${enrichedSkeleton}`;
+  }
+
   // Step 7: Write all outputs
   const outputSummary = writeOutputs(root, result, enrichedSkeleton, convText, {
     skipHooks: opts.skipHooks,
     skipRules: opts.skipRules,
   });
+
+  // Write deep rules into .claude/rules/ alongside gotcha rules. Path-scoped
+  // frontmatter makes them load only when Claude touches files in that dir.
+  if (deepRules.size > 0 && !opts.skipRules) {
+    const rulesDir = join(root, ".claude", "rules");
+    if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
+    for (const [filename, content] of deepRules) {
+      writeFileSync(join(rulesDir, filename), content);
+    }
+    console.log(`  Wrote ${deepRules.size} deep rule files to .claude/rules/`);
+  }
 
   // Step 8: Summary
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);

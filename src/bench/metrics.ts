@@ -223,6 +223,104 @@ export function compareMetrics(
 }
 
 /**
+ * Three-way comparison: baseline / with briefed / with briefed --deep.
+ * Printed as four columns so you can eyeball whether the extra deep cost
+ * is worth it versus the static skeleton alone.
+ */
+export function compareMetrics3(
+  without: TaskMetrics,
+  withCctx: TaskMetrics,
+  withDeep: TaskMetrics,
+  taskName: string,
+): string {
+  const lines: string[] = [];
+  lines.push(`  Task: "${taskName}"`);
+  lines.push("  " + "─".repeat(78));
+  lines.push(pad4("", "Baseline", "Static", "Deep", "Δ deep vs base"));
+  lines.push("  " + "─".repeat(78));
+
+  lines.push(
+    pad4(
+      "Duration",
+      `${(without.durationMs / 1000).toFixed(1)}s`,
+      `${(withCctx.durationMs / 1000).toFixed(1)}s`,
+      `${(withDeep.durationMs / 1000).toFixed(1)}s`,
+      formatDelta(without.durationMs, withDeep.durationMs),
+    ),
+  );
+  lines.push(
+    pad4(
+      "Turns",
+      without.numTurns.toString(),
+      withCctx.numTurns.toString(),
+      withDeep.numTurns.toString(),
+      formatDelta(without.numTurns, withDeep.numTurns),
+    ),
+  );
+  lines.push(
+    pad4(
+      "Input tokens",
+      formatNumber(without.inputTokens),
+      formatNumber(withCctx.inputTokens),
+      formatNumber(withDeep.inputTokens),
+      formatDelta(without.inputTokens, withDeep.inputTokens),
+    ),
+  );
+  lines.push(
+    pad4(
+      "Output tokens",
+      formatNumber(without.outputTokens),
+      formatNumber(withCctx.outputTokens),
+      formatNumber(withDeep.outputTokens),
+      formatDelta(without.outputTokens, withDeep.outputTokens, true),
+    ),
+  );
+  lines.push(
+    pad4(
+      "Cost",
+      `$${without.totalCostUsd.toFixed(4)}`,
+      `$${withCctx.totalCostUsd.toFixed(4)}`,
+      `$${withDeep.totalCostUsd.toFixed(4)}`,
+      formatDelta(without.totalCostUsd, withDeep.totalCostUsd),
+    ),
+  );
+  lines.push(
+    pad4(
+      "File reads",
+      without.fileReads.toString(),
+      withCctx.fileReads.toString(),
+      withDeep.fileReads.toString(),
+      formatDelta(without.fileReads, withDeep.fileReads),
+    ),
+  );
+  lines.push(
+    pad4(
+      "Unique reads",
+      without.uniqueFilesRead.toString(),
+      withCctx.uniqueFilesRead.toString(),
+      withDeep.uniqueFilesRead.toString(),
+      formatDelta(without.uniqueFilesRead, withDeep.uniqueFilesRead),
+    ),
+  );
+  lines.push(
+    pad4(
+      "File edits",
+      without.fileEdits.toString(),
+      withCctx.fileEdits.toString(),
+      withDeep.fileEdits.toString(),
+      formatDelta(without.fileEdits, withDeep.fileEdits, true),
+    ),
+  );
+
+  lines.push("  " + "─".repeat(78));
+  return lines.join("\n");
+}
+
+function pad4(label: string, c1: string, c2: string, c3: string, c4: string): string {
+  return `  ${label.padEnd(14)} ${c1.padStart(12)} ${c2.padStart(12)} ${c3.padStart(12)} ${c4.padStart(14)}`;
+}
+
+/**
  * Generate a summary report from multiple task comparisons.
  */
 export function generateSummary(
@@ -230,6 +328,7 @@ export function generateSummary(
     task: string;
     without: TaskMetrics | null;
     withCctx: TaskMetrics | null;
+    withDeep?: TaskMetrics | null;
   }>
 ): string {
   const lines: string[] = [];
@@ -243,6 +342,13 @@ export function generateSummary(
   let totalCostWithout = 0;
   let totalCostWith = 0;
 
+  // Deep arm totals (only populated when results have withDeep)
+  let deepCompared = 0;
+  let totalDurationDeep = 0;
+  let totalInputDeep = 0;
+  let totalTurnsDeep = 0;
+  let totalCostDeep = 0;
+
   for (const r of results) {
     if (r.without && r.withCctx) {
       compared++;
@@ -254,6 +360,14 @@ export function generateSummary(
       totalTurnsWith += r.withCctx.numTurns;
       totalCostWithout += r.without.totalCostUsd;
       totalCostWith += r.withCctx.totalCostUsd;
+
+      if (r.withDeep) {
+        deepCompared++;
+        totalDurationDeep += r.withDeep.durationMs;
+        totalInputDeep += r.withDeep.inputTokens;
+        totalTurnsDeep += r.withDeep.numTurns;
+        totalCostDeep += r.withDeep.totalCostUsd;
+      }
     }
   }
 
@@ -265,7 +379,7 @@ export function generateSummary(
   lines.push("  " + "═".repeat(62));
   lines.push("  SUMMARY");
   lines.push("  " + "═".repeat(62));
-  lines.push(`  Tasks compared:       ${compared}`);
+  lines.push(`  Tasks compared:       ${compared}${deepCompared > 0 ? ` (${deepCompared} with deep)` : ""}`);
   lines.push(
     `  Avg duration:         ${(totalDurationWithout / compared / 1000).toFixed(1)}s → ${(totalDurationWith / compared / 1000).toFixed(1)}s (${formatDelta(totalDurationWithout, totalDurationWith)})`
   );
@@ -278,6 +392,24 @@ export function generateSummary(
   lines.push(
     `  Total cost:           $${totalCostWithout.toFixed(4)} → $${totalCostWith.toFixed(4)} (${formatDelta(totalCostWithout, totalCostWith)})`
   );
+
+  if (deepCompared > 0) {
+    lines.push("");
+    lines.push("  Deep arm (vs baseline):");
+    lines.push(
+      `  Avg duration:         ${(totalDurationWithout / deepCompared / 1000).toFixed(1)}s → ${(totalDurationDeep / deepCompared / 1000).toFixed(1)}s (${formatDelta(totalDurationWithout, totalDurationDeep)})`
+    );
+    lines.push(
+      `  Avg input tokens:     ${formatNumber(Math.round(totalInputWithout / deepCompared))} → ${formatNumber(Math.round(totalInputDeep / deepCompared))} (${formatDelta(totalInputWithout, totalInputDeep)})`
+    );
+    lines.push(
+      `  Avg turns:            ${(totalTurnsWithout / deepCompared).toFixed(1)} → ${(totalTurnsDeep / deepCompared).toFixed(1)} (${formatDelta(totalTurnsWithout, totalTurnsDeep)})`
+    );
+    lines.push(
+      `  Total cost:           $${totalCostWithout.toFixed(4)} → $${totalCostDeep.toFixed(4)} (${formatDelta(totalCostWithout, totalCostDeep)})`
+    );
+  }
+
   lines.push("  " + "═".repeat(62));
 
   return lines.join("\n");

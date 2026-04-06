@@ -1,7 +1,7 @@
 import { execSync, spawnSync } from "child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "fs";
 import { join, resolve } from "path";
-import { parseResult, compareMetrics, generateSummary, type TaskMetrics } from "./metrics.js";
+import { parseResult, compareMetrics, compareMetrics3, generateSummary, type TaskMetrics } from "./metrics.js";
 
 export interface BenchTask {
   name: string;
@@ -12,6 +12,7 @@ export interface BenchResult {
   task: BenchTask;
   without: TaskMetrics | null;
   withCctx: TaskMetrics | null;
+  withDeep: TaskMetrics | null;
   error: string | null;
 }
 
@@ -47,6 +48,8 @@ export interface RunOptions {
   maxTasks?: number;
   timeoutMs?: number;
   resume?: boolean;
+  /** Also run a third arm with `briefed init --deep` for LLM-annotated rules. */
+  compareDeep?: boolean;
 }
 
 /**
@@ -61,6 +64,9 @@ export async function runBenchmark(opts: RunOptions): Promise<BenchResult[]> {
 
   mkdirSync(join(outputDir, "without"), { recursive: true });
   mkdirSync(join(outputDir, "with"), { recursive: true });
+  if (opts.compareDeep) {
+    mkdirSync(join(outputDir, "deep"), { recursive: true });
+  }
 
   const claudePath = findClaude();
   if (!claudePath) {
@@ -74,12 +80,14 @@ export async function runBenchmark(opts: RunOptions): Promise<BenchResult[]> {
     console.log("  Report-only mode: loading existing results...\n");
     const results: BenchResult[] = [];
     for (const task of tasks) {
-      const result: BenchResult = { task, without: null, withCctx: null, error: null };
+      const result: BenchResult = { task, without: null, withCctx: null, withDeep: null, error: null };
       try {
         const wp = join(outputDir, "without", `${task.name}.json`);
         const cp = join(outputDir, "with", `${task.name}.json`);
+        const dp = join(outputDir, "deep", `${task.name}.json`);
         if (existsSync(wp)) result.without = parseResult(wp);
         if (existsSync(cp)) result.withCctx = parseResult(cp);
+        if (existsSync(dp)) result.withDeep = parseResult(dp);
       } catch (e) {
         result.error = (e as Error).message;
       }
@@ -143,17 +151,55 @@ export async function runBenchmark(opts: RunOptions): Promise<BenchResult[]> {
     }
   }
 
+  // Phase 2.5: Run tasks WITH briefed --deep (LLM-annotated rules)
+  if (!opts.skipWith && opts.compareDeep) {
+    console.log("\n  Phase 2.5: Running tasks WITH briefed --deep...\n");
+
+    // Re-init with --deep. Clearing briefed artifacts first ensures the
+    // new rules files and system overview actually take effect.
+    const briefedCli = join(import.meta.dirname, "..", "cli.js");
+    console.log("  Running `briefed init --deep` ...");
+    try {
+      execSync(`node "${briefedCli}" init --repo "${root}" --deep --skip-hooks`, {
+        stdio: "inherit",
+      });
+    } catch (e) {
+      console.error(`  deep init failed: ${(e as Error).message.slice(0, 200)}`);
+      console.error("  Skipping deep arm.");
+    }
+
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      const out = join(outputDir, "deep", `${task.name}.json`);
+      if (resume && existsSync(out)) {
+        console.log(`  [${i + 1}/${tasks.length}] ${task.name} (cached, skipping)`);
+        continue;
+      }
+      console.log(`  [${i + 1}/${tasks.length}] ${task.name}`);
+
+      try {
+        runClaudeTask(claudePath, root, task.prompt, out, timeoutMs);
+        const m = parseResult(out);
+        console.log(`    ${(m.durationMs / 1000).toFixed(1)}s, ${m.numTurns} turns, ${m.inputTokens + m.outputTokens} tokens`);
+      } catch (e) {
+        console.error(`    Error: ${(e as Error).message.slice(0, 100)}`);
+      }
+    }
+  }
+
   // Phase 3: Compare
   console.log("\n  Phase 3: Results\n");
   const results: BenchResult[] = [];
 
   for (const task of tasks) {
-    const result: BenchResult = { task, without: null, withCctx: null, error: null };
+    const result: BenchResult = { task, without: null, withCctx: null, withDeep: null, error: null };
     try {
       const wp = join(outputDir, "without", `${task.name}.json`);
       const cp = join(outputDir, "with", `${task.name}.json`);
+      const dp = join(outputDir, "deep", `${task.name}.json`);
       if (existsSync(wp)) result.without = parseResult(wp);
       if (existsSync(cp)) result.withCctx = parseResult(cp);
+      if (existsSync(dp)) result.withDeep = parseResult(dp);
     } catch (e) {
       result.error = (e as Error).message;
     }
@@ -173,19 +219,27 @@ export function generateReport(results: BenchResult[]): string {
   lines.push("  " + "═".repeat(62));
   lines.push("");
 
-  const summaryData: Array<{ task: string; without: TaskMetrics | null; withCctx: TaskMetrics | null }> = [];
+  const summaryData: Array<{ task: string; without: TaskMetrics | null; withCctx: TaskMetrics | null; withDeep: TaskMetrics | null }> = [];
+
+  const anyDeep = results.some((r) => r.withDeep);
 
   for (const r of results) {
-    if (r.without && r.withCctx) {
+    if (r.without && r.withCctx && r.withDeep) {
+      lines.push(compareMetrics3(r.without, r.withCctx, r.withDeep, r.task.name));
+      lines.push("");
+    } else if (r.without && r.withCctx) {
       lines.push(compareMetrics(r.without, r.withCctx, r.task.name));
       lines.push("");
     } else if (r.error) {
       lines.push(`  Task "${r.task.name}": Error — ${r.error}`);
     } else {
-      lines.push(`  Task "${r.task.name}": Missing data (need both runs)`);
+      lines.push(`  Task "${r.task.name}": Missing data (need at least baseline + with runs)`);
     }
-    summaryData.push({ task: r.task.name, without: r.without, withCctx: r.withCctx });
+    summaryData.push({ task: r.task.name, without: r.without, withCctx: r.withCctx, withDeep: r.withDeep });
   }
+
+  // Suppress unused-warn when the deep arm is empty
+  void anyDeep;
 
   lines.push(generateSummary(summaryData));
   return lines.join("\n");
