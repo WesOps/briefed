@@ -69,7 +69,7 @@
   },
   "mcpServers": {
     "briefed": {
-      "command": "node",
+      "command": "/opt/node22/bin/node",
       "args": [
         "/home/user/briefed/dist/cli.js",
         "mcp",
