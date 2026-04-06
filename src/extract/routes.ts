@@ -8,6 +8,16 @@ export interface Route {
   handler: string;
   file: string;
   middleware: string[];
+  /** Auth requirement detected from middleware or handler body. */
+  auth?: "public" | "required" | string | null;
+  /** Name of the request body schema, if detected (e.g. "CreateUserSchema"). */
+  bodySchema?: string | null;
+  /**
+   * Match position in the source file (when multiple routes share a file).
+   * Used internally to scope auth/schema detection to the right handler chain.
+   * Stripped before the routes leave the extractor.
+   */
+  _matchPos?: number;
 }
 
 /**
@@ -69,6 +79,7 @@ export function extractRoutes(root: string): Route[] {
         handler: f,
         file: f,
         middleware: extractMiddleware(content, match.index || 0),
+        _matchPos: match.index,
       });
     }
 
@@ -82,6 +93,7 @@ export function extractRoutes(root: string): Route[] {
         handler: f,
         file: f,
         middleware: [],
+        _matchPos: match.index,
       });
     }
 
@@ -97,6 +109,7 @@ export function extractRoutes(root: string): Route[] {
             handler: f,
             file: f,
             middleware: [],
+            _matchPos: match.index,
           });
         }
       }
@@ -154,7 +167,7 @@ export function extractRoutes(root: string): Route[] {
     // FastAPI: @app.get("/path") or @router.post("/path")
     const fastapiRegex = /@(?:app|router)\.(get|post|put|patch|delete)\s*\(\s*['"]([^'"]+)['"]/gi;
     for (const match of content.matchAll(fastapiRegex)) {
-      routes.push({ method: match[1].toUpperCase(), path: match[2], handler: f, file: f, middleware: [] });
+      routes.push({ method: match[1].toUpperCase(), path: match[2], handler: f, file: f, middleware: [], _matchPos: match.index });
     }
 
     // Flask: @app.route("/path", methods=["GET"])
@@ -162,14 +175,14 @@ export function extractRoutes(root: string): Route[] {
     for (const match of content.matchAll(flaskRegex)) {
       const methods = match[2] ? match[2].replace(/['"]/g, "").split(",").map((m) => m.trim().toUpperCase()) : ["GET"];
       for (const m of methods) {
-        routes.push({ method: m, path: match[1], handler: f, file: f, middleware: [] });
+        routes.push({ method: m, path: match[1], handler: f, file: f, middleware: [], _matchPos: match.index });
       }
     }
 
     // Django: path('url', view)
     const djangoRegex = /path\s*\(\s*['"]([^'"]*)['"]\s*,\s*(\w+)/g;
     for (const match of content.matchAll(djangoRegex)) {
-      routes.push({ method: "ALL", path: "/" + match[1], handler: match[2], file: f, middleware: [] });
+      routes.push({ method: "ALL", path: "/" + match[1], handler: match[2], file: f, middleware: [], _matchPos: match.index });
     }
   }
 
@@ -270,7 +283,96 @@ export function extractRoutes(root: string): Route[] {
     }
   }
 
+  // Enrichment pass: detect auth + body schema for each route by inspecting
+  // its handler chain. We cache file reads so a file with N routes is only
+  // read once. When _matchPos is set (multi-route-per-file frameworks like
+  // Express), scope detection to a window starting at the route's match
+  // position. Otherwise (single-route-per-file like Next.js route handlers,
+  // Remix loaders, SvelteKit endpoints), scan the whole file.
+  const ROUTE_WINDOW = 600;
+  const fileCache = new Map<string, string>();
+  for (const route of routes) {
+    let content = fileCache.get(route.file);
+    if (content === undefined) {
+      try {
+        content = readFileSync(join(root, route.file), "utf-8");
+      } catch {
+        content = "";
+      }
+      fileCache.set(route.file, content);
+    }
+    if (!content) continue;
+    const scope = route._matchPos !== undefined
+      ? content.slice(route._matchPos, route._matchPos + ROUTE_WINDOW)
+      : content;
+    route.auth = detectAuth(route, scope);
+    route.bodySchema = detectBodySchema(scope);
+  }
+
+  // Strip internal _matchPos before returning
+  for (const r of routes) delete r._matchPos;
+
   return routes;
+}
+
+/**
+ * Detect auth requirement for a route. Returns:
+ *   "required" — clearly behind auth (middleware or handler body check)
+ *   "role:NAME" — gated on a specific role
+ *   "public" — explicit public marker (rare)
+ *   null — couldn't determine
+ */
+function detectAuth(route: Route, content: string): string | null {
+  // Check the route's own middleware list first
+  const authMwPattern = /\b(requireAuth|isAuthenticated|protect|authenticate|withAuth|verifyJWT|verifyToken|jwtAuth|authMiddleware|requireUser|ensureAuthenticated)\b/i;
+  for (const mw of route.middleware) {
+    if (authMwPattern.test(mw)) return "required";
+  }
+
+  // Role-based middleware: requireRole('admin'), hasRole("admin"), authorize('admin')
+  const roleMatch = content.match(/\b(?:requireRole|hasRole|authorize|requirePermission|checkRole)\s*\(\s*['"]([^'"]+)['"]/);
+  if (roleMatch) return `role:${roleMatch[1]}`;
+
+  // In-body auth checks (for Next.js route handlers, server actions, etc.)
+  const inBodyPatterns = [
+    /\bawait\s+getServerSession\b/,
+    /\bawait\s+auth\s*\(\s*\)/,
+    /\bgetToken\s*\(/,
+    /\brequireAuth\s*\(/,
+    /\bgetCurrentUser\s*\(/,
+    /\bsession\.user\b/,
+    /\bDepends\s*\(\s*get_current_user\b/, // FastAPI
+    /@login_required\b/,                    // Flask/Django
+  ];
+  for (const p of inBodyPatterns) {
+    if (p.test(content)) return "required";
+  }
+
+  return null;
+}
+
+/**
+ * Detect the request body schema name. Looks for common validation patterns:
+ *   zValidator(SchemaName)
+ *   validate(SchemaName)
+ *   validateBody(SchemaName)
+ *   SchemaName.parse(...)  / SchemaName.safeParse(...)
+ *   body: SchemaName
+ */
+function detectBodySchema(content: string): string | null {
+  const patterns = [
+    /\bzValidator\s*\(\s*['"]?(?:json|body|form)['"]?\s*,\s*(\w+Schema|\w+Input|\w+Dto)\b/,
+    /\bvalidateBody\s*\(\s*(\w+Schema|\w+Input|\w+Dto)\b/,
+    /\bvalidate\s*\(\s*(\w+Schema|\w+Input|\w+Dto)\b/,
+    /\b(\w+Schema)\.(?:parse|safeParse)\s*\(/,
+    /\bbody\s*:\s*(\w+Schema|\w+Input|\w+Dto)\b/,
+    /\bschema\s*:\s*(\w+Schema|\w+Input|\w+Dto)\b/,
+  ];
+  for (const p of patterns) {
+    const m = content.match(p);
+    if (m) return m[1];
+  }
+  return null;
 }
 
 function extractMiddleware(content: string, matchIndex: number): string[] {
@@ -288,24 +390,35 @@ export function formatRoutes(routes: Route[]): string {
 
   const lines: string[] = ["API:"];
 
-  // Deduplicate and group by path
-  const grouped = new Map<string, Set<string>>();
-  const mwByPath = new Map<string, string[]>();
+  // Deduplicate and group by path; merge auth/schema/middleware across same-path routes.
+  interface Agg {
+    methods: Set<string>;
+    middleware: Set<string>;
+    auth: string | null;
+    bodySchema: string | null;
+  }
+  const grouped = new Map<string, Agg>();
   for (const r of routes) {
-    // Normalize path separators
     const path = r.path.replace(/\\/g, "/");
-    if (!grouped.has(path)) grouped.set(path, new Set());
-    grouped.get(path)!.add(r.method);
-    if (r.middleware.length > 0) {
-      mwByPath.set(path, [...new Set([...(mwByPath.get(path) || []), ...r.middleware])]);
+    let agg = grouped.get(path);
+    if (!agg) {
+      agg = { methods: new Set(), middleware: new Set(), auth: null, bodySchema: null };
+      grouped.set(path, agg);
     }
+    agg.methods.add(r.method);
+    for (const mw of r.middleware) agg.middleware.add(mw);
+    if (r.auth && !agg.auth) agg.auth = r.auth;
+    if (r.bodySchema && !agg.bodySchema) agg.bodySchema = r.bodySchema;
   }
 
-  for (const [path, methods] of grouped) {
-    const methodStr = [...methods].join(",");
-    const mw = mwByPath.get(path);
+  for (const [path, agg] of grouped) {
+    const methodStr = [...agg.methods].join(",");
+    const tags: string[] = [];
+    if (agg.auth) tags.push(agg.auth);
+    if (agg.bodySchema) tags.push(`body:${agg.bodySchema}`);
+    if (agg.middleware.size > 0) tags.push(...agg.middleware);
     let line = `  ${methodStr} ${path}`;
-    if (mw && mw.length > 0) line += ` [${mw.join(", ")}]`;
+    if (tags.length > 0) line += ` [${tags.join(", ")}]`;
     lines.push(line);
   }
 

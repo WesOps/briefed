@@ -54,9 +54,13 @@ export function routeDetail(root: string, method?: string, path?: string): CallT
   for (const [prefix, groupRoutes] of grouped) {
     lines.push(`### ${prefix}`);
     for (const r of groupRoutes) {
-      const mw = r.middleware.length > 0 ? ` [${r.middleware.join(", ")}]` : "";
+      const tags: string[] = [];
+      if (r.auth) tags.push(r.auth);
+      if (r.bodySchema) tags.push(`body:${r.bodySchema}`);
+      if (r.middleware.length > 0) tags.push(...r.middleware);
+      const tagStr = tags.length > 0 ? ` [${tags.join(", ")}]` : "";
       const handler = r.handler !== "default" ? ` → ${r.handler}` : "";
-      lines.push(`- **${r.method}** \`${r.path}\`${handler}${mw} — \`${r.file}\``);
+      lines.push(`- **${r.method}** \`${r.path}\`${handler}${tagStr} — \`${r.file}\``);
     }
     lines.push("");
   }
