@@ -7,3 +7,4 @@ dist/
 .cursorrules
 codex.md
 .github/copilot-instructions.md
+*.briefed-backup

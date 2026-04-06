@@ -20,6 +20,7 @@ import { extractInfra } from "./infra.js";
 import { extractRouteCalls } from "./cross-layer.js";
 import { extractChurn } from "./churn.js";
 import { detectCycles } from "./cycles.js";
+import { extractDeps } from "./deps.js";
 import { isSensitiveFile } from "./security.js";
 import type { FileExtraction } from "./signatures.js";
 import type { DepGraph } from "./depgraph.js";
@@ -38,6 +39,7 @@ import type { FrontendInfo } from "./frontend.js";
 import type { InfraInfo } from "./infra.js";
 import type { CrossLayerGraph } from "./cross-layer.js";
 import type { FileChurn } from "./churn.js";
+import type { DepsResult } from "./deps.js";
 import type { ScanResult } from "./scanner.js";
 import type { StackInfo } from "../utils/detect.js";
 
@@ -61,6 +63,7 @@ export interface ExtractionResult {
   crossLayer: CrossLayerGraph;
   churn: FileChurn[];
   cycles: string[][];
+  deps: DepsResult;
 }
 
 /**
@@ -196,6 +199,13 @@ export function runExtractionPipeline(
     console.log(`  Churn: ${churn.length} files touched in last 90 days`);
   }
 
+  // External dependency context (versions + import frequency, Context7-aware)
+  const deps = extractDeps(root, extractions);
+  if (deps.packages.length > 0) {
+    const c7 = deps.hasContext7 ? " (Context7 detected)" : "";
+    console.log(`  Found ${deps.packages.length} external packages${c7}`);
+  }
+
   // Extract git history for complex files
   console.log("  Extracting git history...");
   const fileComplexityPairs = complexityScores.map((c) => ({
@@ -316,5 +326,6 @@ export function runExtractionPipeline(
     crossLayer,
     churn,
     cycles,
+    deps,
   };
 }

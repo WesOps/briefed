@@ -1,34 +1,25 @@
 # briefed
 
-**Your AI already knows your codebase before you ask.**
+**Compile your codebase into focused, token-efficient context for AI coding tools.**
 
-briefed scans your repository once and compiles a focused, token-efficient context snapshot that Claude Code, Cursor, and Copilot load automatically at the start of every session — eliminating the orientation phase where AI tools spend 8–12 seconds reading files they should already know.
+briefed scans your repository and produces a layered context snapshot that Claude Code, Cursor, Copilot, and any tool reading `AGENTS.md` load automatically — so the AI starts oriented instead of grepping around.
 
 ```bash
 npx briefed init
 ```
 
-That's it. briefed installs itself and auto-updates on every commit.
+That's it. briefed installs a git post-commit hook and re-indexes after every commit.
 
 ---
 
-## The problem
-
-Every AI coding session starts the same way: the model reads 5–10 files, builds a mental model of your codebase, then starts working. This costs ~5,000–10,000 tokens and 8–12 seconds *before a single line of code is written* — on every task.
-
-briefed pre-computes that mental model so the AI starts already oriented.
-
 ## What it produces
-
-Three layers, delivered through the right channels:
 
 | Layer | What | Where | When loaded |
 |-------|------|--------|-------------|
-| Skeleton | File tree, exports, function signatures, dependency graph | `CLAUDE.md` | Every session |
-| Gotchas | Constraints, guard clauses, ordering deps, implicit contracts | `.claude/rules/` | When touching matching files |
-| Contracts | Per-module behavioral contracts, state machines, side effects | `.briefed/contracts/` | Per-prompt via hook |
-
-**Estimated savings: ~5,000–8,000 tokens per prompt, ~7–11 seconds per task.**
+| Skeleton | File tree, exports, signatures, dep graph (PageRank-ranked), routes, schemas, conventions | `CLAUDE.md` / `AGENTS.md` / `.cursorrules` | Every session |
+| Gotchas | Path-scoped constraints, guard clauses, important comments | `.claude/rules/` | When touching matching files |
+| Contracts | Per-module behavioral contracts | `.briefed/contracts/` | Per-prompt via hook |
+| MCP tools | On-demand queries (blast radius, find usages, symbol lookup) | `briefed mcp` server | When the agent asks |
 
 ## Installation
 
@@ -36,92 +27,145 @@ Three layers, delivered through the right channels:
 # Run once in any repo
 npx briefed init
 
-# Check your setup
+# Preview without writing files
+npx briefed plan
+
+# Validate setup
 npx briefed doctor
 
-# See token usage stats
+# Token usage breakdown
 npx briefed stats
+```
+
+## What gets extracted
+
+Static analysis only — no LLM calls during `init`. Extractors run only when relevant files are present.
+
+**Code structure**
+- Function/class/type signatures via TypeScript AST (with regex fallback for other languages)
+- Dependency graph with PageRank-ranked file importance
+- Import cycle detection (runtime imports only — type-only imports are correctly ignored)
+- Symbol-level cross-references and call-site lookup
+
+**APIs & data**
+- HTTP routes — Express, Fastify, Hono, Next.js, FastAPI, Flask, Django
+  - Per-route auth detection (`requireAuth`, `getServerSession`, `Depends(get_current_user)`, role middleware, `@login_required`, etc.)
+  - Per-route request body schema detection (Zod, `validateBody`, `Schema.parse`)
+- Database schemas — Prisma, Drizzle, TypeORM, Django models, fields, relations
+- Cross-layer graph linking frontend `fetch` calls to backend route handlers
+
+**Project context**
+- External deps with installed versions and import counts (Context7-aware: detects Context7 MCP and signals the agent to ask for version-pinned public docs; flags private packages where Context7 has no coverage)
+- Environment variables (required vs optional, grouped by category)
+- Build/test/dev scripts from `package.json`, `Makefile`, etc.
+- Monorepo workspace detection
+- Infrastructure files (Docker Compose, etc.)
+
+**Quality signals**
+- Complexity scoring per file
+- Gotchas: `TODO`/`HACK`/`FIXME`/`WARNING` comments, guard clauses
+- Error handling pattern detection
+- Project conventions (camelCase vs snake_case, error style, named vs default exports)
+- Usage examples — how each exported symbol is actually called elsewhere in the repo
+- Test mappings (source → test file)
+- Git churn (hot files in last 90 days)
+- Recent file history for high-complexity files
+- Frontend page routes and components
+- Secret redaction (skips and redacts files matching sensitive patterns)
+- Staleness detection (compares against last index)
+
+## MCP tools
+
+Run `briefed mcp` to start an MCP server that exposes on-demand queries to your AI agent:
+
+| Tool | What it does |
+|------|--------------|
+| `briefed_blast_radius` | BFS over the dep graph to show every file/route/model affected by changing a given file |
+| `briefed_symbol` | Look up a function/class/type by name — signature, importers, dependencies, test coverage, importance rank |
+| `briefed_find_usages` | Find every call site of a symbol with file, line, and surrounding context. Scoped to actual importers, much faster than grep |
+| `briefed_routes` | Filter API routes by HTTP method or path pattern |
+| `briefed_schema` | Look up database models with fields, types, and relations |
+
+Add to `.mcp.json` or `.claude/settings.json`:
+```json
+{
+  "mcpServers": {
+    "briefed": { "command": "briefed", "args": ["mcp"] }
+  }
+}
 ```
 
 ## What gets generated
 
 ```
 your-repo/
-├── CLAUDE.md              # skeleton — always loaded by Claude Code
-├── AGENTS.md              # cross-tool context (Copilot, OpenAI agents)
-├── .cursorrules           # Cursor IDE context
+├── CLAUDE.md                        # skeleton — Claude Code
+├── AGENTS.md                        # cross-tool context (Codex, Copilot, generic)
+├── .cursorrules                     # Cursor IDE
+├── codex.md                         # OpenAI Codex CLI
+├── .github/copilot-instructions.md  # GitHub Copilot
 ├── .claude/
-│   ├── settings.json      # hooks registered here
+│   ├── settings.json                # adaptive hooks
 │   └── rules/
-│       └── briefed-*.md   # path-scoped gotchas
+│       └── briefed-*.md             # path-scoped gotchas
 └── .briefed/
-    ├── contracts/         # module behavioral contracts
-    ├── index.json         # module map for hook matching
-    ├── test-map.json      # source → test file mappings
-    └── history.json       # git churn data
+    ├── contracts/                   # module behavioral contracts
+    ├── index.json                   # module map for hook matching
+    ├── test-map.json                # source → test file mappings
+    └── history.json                 # git history for complex files
 ```
 
 ## How it stays fresh
 
-briefed installs a git `post-commit` hook that re-indexes your codebase after every commit in the background (~5 seconds, async). No CI required.
+briefed installs a git `post-commit` hook that re-indexes in the background after every commit. No CI required.
 
 ```bash
 # Manual refresh
-npx briefed init
+briefed init
 
-# Check staleness
-npx briefed doctor
+# Check staleness / setup health
+briefed doctor
+
+# Remove the git hook
+briefed unhook
 ```
-
-## What gets mapped
-
-briefed extracts context across every domain relevant to your project (only relevant extractors run):
-
-- **Code structure** — function signatures, exports, dependency graph, PageRank-ranked by importance
-- **Behavioral descriptions** — Claude-generated one-liners for what each function does (via `--deep`, default)
-- **System overview** — how modules connect, data flow, architecture patterns (via `--deep`, default)
-- **Schemas** — Prisma, Drizzle, Django, TypeORM models and relations
-- **API routes** — Express, Fastify, Next.js, FastAPI, Django, Hono endpoints
-- **OpenAPI / GraphQL** — parsed schema files with endpoints and types
-- **Auth model** — provider, OAuth strategies, roles, session store, middleware
-- **Integrations** — 50+ known services (Stripe, SendGrid, Sentry, Cloudinary, etc.)
-- **Background jobs** — BullMQ, Inngest, Celery, node-cron, Trigger.dev workers
-- **Events / webhooks** — event contracts, webhook triggers, pub/sub topics
-- **Feature flags** — LaunchDarkly, Unleash, GrowthBook, env-based flags
-- **Caching** — Redis, Next.js ISR, HTTP headers, LRU, Django cache
-- **Migrations** — last 5 schema changes with summaries
-- **Deprecations** — @deprecated tags, TODO:remove markers
-- **Infrastructure** — Docker Compose, Terraform, Kubernetes, deployment platform
-- **Environment** — required env vars grouped by category
-- **Frontend** — page routes (with auth guards), state stores
-- **Tests** — source → test file mappings
-- **Conventions** — naming patterns, error handling style, import patterns
-- **Gotchas** — important comments, guard clauses, state machine transitions
-- **Git history** — churn data for complex files
 
 ## Commands
 
 ```bash
-briefed init              # scan + deep analysis (default, uses Claude CLI)
-briefed init --fast       # static-only, no Claude calls, instant
-briefed init --skip-hooks # init without installing hooks
-briefed init --skip-rules # init without writing .claude/rules/
-briefed stats             # show token usage breakdown
+briefed init              # scan + generate context (writes files)
+briefed plan              # preview without writing
+briefed stats             # token usage breakdown
 briefed doctor            # validate setup, check staleness
-briefed bench             # benchmark with vs without briefed
+briefed mcp               # start MCP server for on-demand queries
+briefed bench             # benchmark briefed vs baseline Claude Code
+briefed unhook            # remove git post-commit hook
 ```
+
+### Bench
+
+`briefed bench` runs Claude Code on a fixed set of tasks twice — once with briefed, once without — and reports duration, token usage, turn count, file reads, and edit/read ratio for each task.
+
+```bash
+briefed bench --quick     # 2 tasks (~10–20 min)
+briefed bench             # 3 tasks (default)
+briefed bench --full      # 5 tasks (~40–90 min)
+```
+
+Resumable — if a run dies mid-bench, re-running picks up where it left off. Uses your Claude Code subscription, not the API.
 
 ## Works with
 
-- **Claude Code** — hooks inject context automatically
-- **Cursor** — `.cursorrules` loaded on every file
-- **GitHub Copilot** — `AGENTS.md` provides baseline context
-- **Any tool** that reads `CLAUDE.md` or `AGENTS.md`
+- **Claude Code** — `CLAUDE.md` + adaptive hooks + MCP server
+- **Cursor** — `.cursorrules`
+- **GitHub Copilot** — `.github/copilot-instructions.md`
+- **OpenAI Codex CLI** — `codex.md`
+- **Anything else** that reads `AGENTS.md`
 
 ## Requirements
 
 - Node.js >= 20
-- Git (for auto-update hook)
+- Git (for the auto-update hook)
 
 ## License
 
