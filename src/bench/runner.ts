@@ -310,13 +310,24 @@ export async function runSerenaCompare(opts: RunOptions): Promise<BenchResult[]>
       return [];
     }
 
-    // Sanity: both Serena and briefed must be visible to Claude Code
+    // Sanity: Serena must still be visible (might have been clobbered by
+    // briefed init), and briefed must be registered in the repo's
+    // .claude/settings.json (that's where installMcpServer() writes it —
+    // checking via `claude mcp list` is unreliable because not every Claude
+    // Code version surfaces project-scoped servers from settings.json).
     if (!isMcpServerRegistered(claudePath, root, "serena")) {
       console.error("  Error: briefed init clobbered the Serena MCP registration. Aborting.");
       return [];
     }
-    if (!isMcpServerRegistered(claudePath, root, "briefed")) {
-      console.error("  Error: briefed init did not register the briefed MCP server. Aborting.");
+    const settingsPath = join(root, ".claude", "settings.json");
+    let briefedRegistered = false;
+    try {
+      const parsed = JSON.parse(readFileSync(settingsPath, "utf-8"));
+      const servers = (parsed.mcpServers || {}) as Record<string, unknown>;
+      briefedRegistered = Boolean(servers.briefed);
+    } catch { /* leave false */ }
+    if (!briefedRegistered) {
+      console.error("  Error: briefed init did not write mcpServers.briefed to .claude/settings.json. Aborting.");
       return [];
     }
 
