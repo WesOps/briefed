@@ -6,6 +6,7 @@ import { blastRadius } from "./blast-radius.js";
 import { schemaLookup } from "./schema-lookup.js";
 import { routeDetail } from "./route-detail.js";
 import { symbolLookup } from "./symbol-lookup.js";
+import { findUsages } from "./find-usages.js";
 
 export async function startMcpServer(repoPath: string) {
   const root = resolve(repoPath);
@@ -44,6 +45,13 @@ export async function startMcpServer(repoPath: string) {
     "Look up a function, class, type, or interface by name. Shows signature, description, which files import it, dependencies, test coverage, and importance ranking.",
     { name: z.string().describe("Symbol name to look up (e.g. extractFile, DepGraph, buildDepGraph)") },
     async ({ name }) => symbolLookup(root, name),
+  );
+
+  server.tool(
+    "briefed_find_usages",
+    "Find every call site of a symbol with file, line number, and the matching line of context. Scoped to files that actually import the symbol, so it's much faster and higher-signal than blanket grep. Use this instead of grepping when you need to know who calls a function before changing it.",
+    { name: z.string().describe("Exact symbol name to find usages of (case-sensitive)") },
+    async ({ name }) => findUsages(root, name),
   );
 
   const transport = new StdioServerTransport();

@@ -2,9 +2,9 @@
 <!-- briefed:start -->
 # briefed: typescript, javascript project
 Stack: typescript, javascript
-Files: 64 source files across 7 directories
+Files: 67 source files across 7 directories
 
-## src/extract/ (32 files)
+## src/extract/ (34 files)
 signatures.ts ★12
   interface Symbol — Extracted symbol from a source file. [2 callers]
   type SymbolKind = | "function"
@@ -16,8 +16,8 @@ signatures.ts ★12
   interface FileExtraction — Import reference found in a file. [11 callers]
   extractFile(filePath: string, _rootPath: string): FileExtraction — Extract symbols and imports from a source file. [3 callers]
 ast.ts ★2: extractWithAst — AST-based extraction for TypeScript/JavaScript files using the TS compiler API.
-depgraph.ts ★7
-  interface DepGraph [6 callers]
+depgraph.ts ★8
+  interface DepGraph [7 callers]
   buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions. [3 callers]
 scanner.ts ★7
   interface DiscoveredFile
@@ -62,6 +62,7 @@ cross-layer.ts ★3
 pipeline.ts ★2
   interface ExtractionResult
   runExtractionPipeline(root: string, scan: ScanResult, stack: StackInfo): ExtractionResult — Run all extraction steps and return the collected results.
+churn.ts ★2: FileChurn, extractChurn — Compute commit churn per file over a time window. Files that change a, formatChurn — Format the top hot files for inclusion in the skeleton.
 conventions.ts ★2: ProjectConventions, detectConventions — Auto-detect project conventions from code patterns., formatConventions — Format conventions for inclusion in CLAUDE.md or rules.
 frontend.ts ★2
   interface PageRoute
@@ -71,6 +72,7 @@ frontend.ts ★2
   formatFrontend(info: FrontendInfo): string — Format frontend info for skeleton inclusion.
 infra.ts ★2: InfraInfo, InfraService, extractInfra — Extract infrastructure configuration., formatInfra — Format infra info for skeleton inclusion.
 usage-examples.ts ★2: UsageExample, findUsageExamples — Find how functions/classes are actually USED in the codebase., formatUsageExamples — Format usage examples for context injection.
+cycles.ts ★2: detectCycles — Detect import cycles in the dependency graph using iterative DFS., formatCycles — Format detected cycles as a skeleton section.
 error-patterns.ts ★1: ErrorPattern, ErrorPatternType, detectErrorPatterns — Detect the project's error handling patterns.
 history.ts ★1: FileHistory, CommitInfo, getFileHistory — Extract recent git history for files., getBatchHistory — Get history for multiple files efficiently., formatHistory — Format file history for context injection.
 tests.ts ★1: TestMapping, findTestMappings — Find test files that correspond to source files., formatTestContext — Format test mappings for inclusion in the skeleton or contracts.
@@ -82,24 +84,23 @@ depgraph.test.ts:
 log.ts ★9
   debug(msg: string): void — Lightweight logging utilities. [9 callers]
   warn(msg: string): void
+pagerank.ts ★2: GraphNode — Simple PageRank implementation for dependency graph ranking., computePageRank — Compute PageRank scores for a file dependency graph., computeRefCounts — Get reference count (in-degree) for each node.
 detect.ts ★6
   interface StackInfo [2 callers]
   detectStack(root: string): StackInfo — Detect the project's tech stack from config files [3 callers]
   extToLanguage(ext: string): string | null — Map file extension to language name
   PARSEABLE_EXTENSIONS — File extensions we should parse [2 callers]
   SKIP_DIRS — Directories to always skip [2 callers]
-pagerank.ts ★2: GraphNode — Simple PageRank implementation for dependency graph ranking., computePageRank — Compute PageRank scores for a file dependency graph., computeRefCounts — Get reference count (in-degree) for each node.
 tokens.ts ★6
   countTokens(text: string): number — Estimate token count for a string [5 callers]
   formatTokens(count: number): string — Format token count for display [4 callers]
   formatBytes(bytes: number): string — Format byte count for display
 pagerank.test.ts: 
 
-## src/mcp/ (7 files)
-cached-loader.ts ★2: loadCachedExtractions — Load extractions from the SHA256 cache if available, otherwise extract live.
-blast-radius.ts ★2: blastRadius — BFS over the dependency graph to find all files transitively affected
+## src/mcp/ (8 files)
+cached-loader.ts ★3
 
-<!-- briefed skeleton: 32 files, ~1753 tokens -->
+<!-- briefed skeleton: 33 files, ~1790 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
 Tests: 15 source files have matching test files
 Error handling:
@@ -109,25 +110,25 @@ Error handling:
   - Uses schema validation (Zod/Joi/Yup) for input validation
 Usage examples:
   countTokens: const tokens = countTokens(content); (doctor.ts:30)
-  countTokens: const skeletonTokens = countTokens(skeleton); (init.ts:68)
-  detectMonorepo: const mono = detectMonorepo(root); (init.ts:34)
+  countTokens: const skeletonTokens = countTokens(skeleton); (init.ts:70)
+  detectMonorepo: const mono = detectMonorepo(root); (init.ts:36)
   detectMonorepo: const mono = detectMonorepo(root); (plan.ts:24)
-  detectStack: const stack = detectStack(root); (init.ts:43)
+  detectStack: const stack = detectStack(root); (init.ts:45)
   detectStack: const stack = detectStack(root); (plan.ts:30)
-  scanFiles: const scan = scanFiles(root); (init.ts:48)
+  scanFiles: const scan = scanFiles(root); (init.ts:50)
   scanFiles: const scan = scanFiles(root); (plan.ts:34)
-  formatTokens: console.log(`  Skeleton: ${formatTokens(skeletonTokens)} tokens`); (init.ts:69)
+  formatTokens: console.log(`  Skeleton: ${formatTokens(skeletonTokens)} tokens`); (init.ts:71)
   formatTokens: console.log(`    Skeleton (CLAUDE.md):   ~${formatTokens(estAlwaysLoaded)} tokens (always loaded)`); (plan.ts:104)
   buildDepGraph: const graph = buildDepGraph(extractions, "/project"); (depgraph.test.ts:25)
-  buildDepGraph: const depGraph = buildDepGraph(extractions, root); (pipeline.ts:139)
-  extractFile: const extraction = extractFile(file.absolutePath, root); (pipeline.ts:107)
+  buildDepGraph: const depGraph = buildDepGraph(extractions, root); (pipeline.ts:144)
+  extractFile: const extraction = extractFile(file.absolutePath, root); (pipeline.ts:112)
   extractFile: const result = extractFile(file, tmpDir); (signatures.test.ts:25)
-  extractSchemas: schemas = extractSchemas(root); (pipeline.ts:230)
+  extractSchemas: schemas = extractSchemas(root); (pipeline.ts:248)
   extractSchemas: const schemas = extractSchemas(root); (blast-radius.ts:54)
-  extractRoutes: routes = extractRoutes(root); (pipeline.ts:238)
+  extractRoutes: routes = extractRoutes(root); (pipeline.ts:256)
   extractRoutes: const routes = extractRoutes(root); (blast-radius.ts:48)
-  removeGitHook: removeGitHook(root); (cli.ts:69)
-  removeGitHook: removeGitHook(tmpDir); (git-hook.test.ts:82)
+  loadCachedExtractions: const { depGraph } = loadCachedExtractions(root); (blast-radius.ts:14)
+  loadCachedExtractions: const { extractions, depGraph } = loadCachedExtractions(root); (find-usages.ts:26)
 Commands:
   build: tsc
   dev: tsc --watch
@@ -135,4 +136,17 @@ Commands:
   lint: tsc --noEmit
   start: node dist/cli.js
 Required env: config: BRIEFED_DEBUG, APPDATA
+Hot files (last 90d, touch carefully):
+  - src/cli.ts (13 commits, 2 authors)
+  - src/commands/init.ts (13 commits, 2 authors)
+  - src/deliver/hooks.ts (9 commits, 2 authors)
+  - src/generate/index-file.ts (7 commits, 2 authors)
+  - src/generate/skeleton.ts (7 commits, 2 authors)
+  - src/bench/metrics.ts (6 commits, 2 authors)
+  - src/extract/depgraph.ts (6 commits, 2 authors)
+  - src/extract/env.ts (6 commits, 2 authors)
+  - src/extract/frontend.ts (6 commits, 2 authors)
+  - src/extract/routes.ts (6 commits, 2 authors)
+Import cycles: 1 detected (refactor footgun)
+  - src/extract/ast.ts → src/extract/signatures.ts → src/extract/ast.ts
 <!-- briefed:end -->

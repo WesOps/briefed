@@ -18,6 +18,8 @@ import { extractScripts } from "./scripts.js";
 import { extractFrontend } from "./frontend.js";
 import { extractInfra } from "./infra.js";
 import { extractRouteCalls } from "./cross-layer.js";
+import { extractChurn } from "./churn.js";
+import { detectCycles } from "./cycles.js";
 import { isSensitiveFile } from "./security.js";
 import type { FileExtraction } from "./signatures.js";
 import type { DepGraph } from "./depgraph.js";
@@ -35,6 +37,7 @@ import type { ProjectScripts } from "./scripts.js";
 import type { FrontendInfo } from "./frontend.js";
 import type { InfraInfo } from "./infra.js";
 import type { CrossLayerGraph } from "./cross-layer.js";
+import type { FileChurn } from "./churn.js";
 import type { ScanResult } from "./scanner.js";
 import type { StackInfo } from "../utils/detect.js";
 
@@ -56,6 +59,8 @@ export interface ExtractionResult {
   frontend: FrontendInfo;
   infra: InfraInfo;
   crossLayer: CrossLayerGraph;
+  churn: FileChurn[];
+  cycles: string[][];
 }
 
 /**
@@ -140,6 +145,12 @@ export function runExtractionPipeline(
   const edgeCount = [...depGraph.nodes.values()].reduce((s, n) => s + n.outEdges.length, 0);
   console.log(`  Graph: ${depGraph.nodes.size} nodes, ${edgeCount} edges`);
 
+  // Detect import cycles (refactor footgun)
+  const cycles = detectCycles(depGraph);
+  if (cycles.length > 0) {
+    console.log(`  Detected ${cycles.length} import cycle${cycles.length === 1 ? "" : "s"}`);
+  }
+
   // Compute complexity scores
   console.log("  Computing complexity scores...");
   const complexityScores: ComplexityScore[] = [];
@@ -177,6 +188,13 @@ export function runExtractionPipeline(
     root
   );
   console.log(`  Mapped ${testMappings.length} source→test pairs (${testMappings.reduce((s, t) => s + t.testCount, 0)} test cases)`);
+
+  // Compute file churn (hot files = where bugs live)
+  console.log("  Computing file churn...");
+  const churn = extractChurn(root, 90);
+  if (churn.length > 0) {
+    console.log(`  Churn: ${churn.length} files touched in last 90 days`);
+  }
 
   // Extract git history for complex files
   console.log("  Extracting git history...");
@@ -296,5 +314,7 @@ export function runExtractionPipeline(
     frontend,
     infra,
     crossLayer,
+    churn,
+    cycles,
   };
 }
