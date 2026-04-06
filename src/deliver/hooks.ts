@@ -132,12 +132,24 @@ export function installHooks(root: string) {
     ],
   });
 
-  // Register MCP server for on-demand context queries
+  // Register MCP server for on-demand context queries.
+  // Default: use the `briefed` binary in PATH (works for `npm i -g`, npx,
+  // and any normal install). Only fall back to `node <root>/dist/cli.js`
+  // when we're init'ing the briefed repo itself — detected by matching
+  // the name field in the local package.json — so dev-from-source works
+  // without needing `npm link`.
   if (!settings.mcpServers) settings.mcpServers = {};
-  settings.mcpServers["briefed"] = {
-    command: "node",
-    args: [join(root, "dist", "cli.js"), "mcp", "--repo", root],
-  };
+  const isBriefedRepo = (() => {
+    try {
+      const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+      return pkg.name === "briefed" && existsSync(join(root, "dist", "cli.js"));
+    } catch {
+      return false;
+    }
+  })();
+  settings.mcpServers["briefed"] = isBriefedRepo
+    ? { command: "node", args: [join(root, "dist", "cli.js"), "mcp", "--repo", root] }
+    : { command: "briefed", args: ["mcp", "--repo", root] };
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 }
