@@ -254,24 +254,16 @@ export async function runSerenaCompare(opts: RunOptions): Promise<BenchResult[]>
   console.log(`  Using: ${claudePath}`);
 
   // Sanity check: Serena must actually be registered, otherwise the whole
-  // comparison is meaningless. We check both phases' starting state against
-  // this before running anything.
-  const settingsPath = join(root, ".claude", "settings.json");
-  if (!existsSync(settingsPath)) {
-    console.error("  Error: .claude/settings.json not found. Register Serena first.");
-    console.error("  See https://github.com/oraios/serena for install instructions.");
-    return [];
-  }
-  try {
-    const parsed = JSON.parse(readFileSync(settingsPath, "utf-8"));
-    const servers = (parsed.mcpServers || {}) as Record<string, unknown>;
-    if (!servers.serena) {
-      console.error("  Error: Serena is not registered in .claude/settings.json mcpServers.");
-      console.error("  Register it first — the bench needs Serena as the baseline.");
-      return [];
-    }
-  } catch (e) {
-    console.error(`  Error parsing .claude/settings.json: ${(e as Error).message}`);
+  // comparison is meaningless. We can't just grep .claude/settings.json —
+  // Serena might be installed via a Claude Code plugin (plugin-managed
+  // config lives in ~/.claude.json or plugin directories), or registered
+  // at user scope via `claude mcp add`. The authoritative source is
+  // `claude mcp list`, which enumerates every MCP server visible to the
+  // CLI regardless of where it's configured.
+  if (!isMcpServerRegistered(claudePath, root, "serena")) {
+    console.error("  Error: Serena is not registered as an MCP server.");
+    console.error("  Verify with: claude mcp list");
+    console.error("  Install: see https://github.com/oraios/serena");
     return [];
   }
 
@@ -318,20 +310,13 @@ export async function runSerenaCompare(opts: RunOptions): Promise<BenchResult[]>
       return [];
     }
 
-    // Sanity: verify Serena is still registered after briefed init
-    try {
-      const parsed = JSON.parse(readFileSync(settingsPath, "utf-8"));
-      const servers = (parsed.mcpServers || {}) as Record<string, unknown>;
-      if (!servers.serena) {
-        console.error("  Error: briefed init clobbered the Serena MCP registration. Aborting.");
-        return [];
-      }
-      if (!servers.briefed) {
-        console.error("  Error: briefed init did not register the briefed MCP server. Aborting.");
-        return [];
-      }
-    } catch (e) {
-      console.error(`  Error re-reading settings.json: ${(e as Error).message}`);
+    // Sanity: both Serena and briefed must be visible to Claude Code
+    if (!isMcpServerRegistered(claudePath, root, "serena")) {
+      console.error("  Error: briefed init clobbered the Serena MCP registration. Aborting.");
+      return [];
+    }
+    if (!isMcpServerRegistered(claudePath, root, "briefed")) {
+      console.error("  Error: briefed init did not register the briefed MCP server. Aborting.");
       return [];
     }
 
@@ -573,6 +558,29 @@ export function generateReport(results: BenchResult[]): string {
 
   lines.push(generateSummary(summaryData));
   return lines.join("\n");
+}
+
+/**
+ * Check whether an MCP server is visible to Claude Code, regardless of where
+ * it's registered (repo settings.json, user ~/.claude.json, or a plugin).
+ * Uses `claude mcp list` as the authoritative source.
+ */
+function isMcpServerRegistered(claudePath: string, cwd: string, name: string): boolean {
+  const isWindows = process.platform === "win32";
+  try {
+    const r = spawnSync(claudePath, ["mcp", "list"], {
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 10_000,
+      encoding: "utf-8",
+      shell: isWindows,
+    });
+    if (r.status !== 0) return false;
+    const haystack = ((r.stdout || "") + (r.stderr || "")).toLowerCase();
+    return haystack.includes(name.toLowerCase());
+  } catch {
+    return false;
+  }
 }
 
 function findClaude(): string | null {
