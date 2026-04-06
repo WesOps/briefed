@@ -373,11 +373,27 @@ function sliceRelevantLines(content: string, symbols: Symbol[]): string {
   return out.length > 180 ? out.slice(0, 180).join("\n") + "\n..." : out.join("\n");
 }
 
-function runClaudeJson(claudePath: string, prompt: string, cwd: string): string | null {
+/**
+ * Run a one-shot claude -p call. The `model` argument selects the underlying
+ * Claude model — passed straight through to `claude -p --model <name>`.
+ *
+ * Why this matters: deep was originally written assuming the user's CLI was
+ * configured for Sonnet (subscription), where model choice is metered against
+ * their plan. For users on API billing, model choice is real money: Opus is
+ * roughly 5x Sonnet and 15x Haiku. Batch annotations are pattern-matching
+ * with rigid JSON output — Haiku handles them fine. The system overview is
+ * the one place that benefits from a smarter model, and it's a single call.
+ */
+function runClaudeJson(
+  claudePath: string,
+  prompt: string,
+  cwd: string,
+  model: "haiku" | "sonnet" | "opus" = "haiku",
+): string | null {
   try {
     const result = spawnSync(
       claudePath,
-      ["-p", "-", "--output-format", "text"],
+      ["-p", "-", "--output-format", "text", "--model", model],
       {
         input: prompt,
         encoding: "utf-8",
@@ -482,7 +498,9 @@ Rules: plain text paragraph, no markdown headers, no bullets, no generic advice,
 MODULES:
 ${sections.join("\n\n")}`;
 
-  const raw = runClaudeJson(claudePath, prompt, root);
+  // System overview is a single call and benefits from real architectural
+  // reasoning across multiple files — use Sonnet, not the Haiku default.
+  const raw = runClaudeJson(claudePath, prompt, root, "sonnet");
   if (!raw) return null;
 
   return raw
