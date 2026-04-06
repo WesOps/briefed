@@ -577,18 +577,50 @@ export function generateReport(results: BenchResult[]): string {
  * Uses `claude mcp list` as the authoritative source.
  */
 function isMcpServerRegistered(claudePath: string, cwd: string, name: string): boolean {
+  // `claude mcp list` runs health checks on every server and can hang when
+  // a server is slow to start (e.g. uvx cold-start). Read ~/.claude.json and
+  // the repo-scoped settings.json directly instead — those are the two places
+  // `claude mcp add` writes to.
+  const candidates: string[] = [];
+  const home = process.env.HOME || process.env.USERPROFILE;
+  if (home) candidates.push(join(home, ".claude.json"));
+  candidates.push(join(cwd, ".claude", "settings.json"));
+  const needle = name.toLowerCase();
+  for (const path of candidates) {
+    try {
+      const raw = readFileSync(path, "utf-8");
+      const parsed = JSON.parse(raw);
+      // Top-level mcpServers (settings.json) or per-project mcpServers (~/.claude.json)
+      if (parsed.mcpServers && typeof parsed.mcpServers === "object") {
+        for (const k of Object.keys(parsed.mcpServers)) {
+          if (k.toLowerCase() === needle) return true;
+        }
+      }
+      if (parsed.projects && typeof parsed.projects === "object") {
+        for (const proj of Object.values(parsed.projects) as Array<Record<string, unknown>>) {
+          const servers = proj?.mcpServers as Record<string, unknown> | undefined;
+          if (servers && typeof servers === "object") {
+            for (const k of Object.keys(servers)) {
+              if (k.toLowerCase() === needle) return true;
+            }
+          }
+        }
+      }
+    } catch { /* next */ }
+  }
+  // Fallback: try `claude mcp list` with a short timeout in case the above didn't match.
   const isWindows = process.platform === "win32";
   try {
     const r = spawnSync(claudePath, ["mcp", "list"], {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      timeout: 10_000,
+      timeout: 5_000,
       encoding: "utf-8",
       shell: isWindows,
     });
     if (r.status !== 0) return false;
     const haystack = ((r.stdout || "") + (r.stderr || "")).toLowerCase();
-    return haystack.includes(name.toLowerCase());
+    return haystack.includes(needle);
   } catch {
     return false;
   }
