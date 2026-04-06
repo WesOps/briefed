@@ -28,6 +28,14 @@ const DEFAULT_TASKS: BenchTask[] = [
     name: "find-and-fix-bugs",
     prompt: "Read through the source code and identify any potential bugs, missing error handling, or edge cases. Fix at least 2 issues you find. Read every source file before making changes.",
   },
+  {
+    name: "add-test-coverage",
+    prompt: "Find a module that has no test file. Write a comprehensive test suite for it covering the main exported functions. Read the module first to understand what it does.",
+  },
+  {
+    name: "refactor-module",
+    prompt: "Find the largest source file. Refactor it to improve readability: extract helper functions, improve naming, add types where missing. Read the file and its callers before making changes.",
+  },
 ];
 
 export interface RunOptions {
@@ -52,10 +60,29 @@ export async function runBenchmark(opts: RunOptions): Promise<BenchResult[]> {
 
   const claudePath = findClaude();
   if (!claudePath) {
-    console.error("  Error: 'claude' CLI not found.");
+    console.error("  Error: 'claude' CLI not found. Install with: npm i -g @anthropic-ai/claude-code");
     return [];
   }
   console.log(`  Using: ${claudePath}`);
+
+  // Report-only: skip runs, just load existing results
+  if (opts.skipWithout && opts.skipWith) {
+    console.log("  Report-only mode: loading existing results...\n");
+    const results: BenchResult[] = [];
+    for (const task of tasks) {
+      const result: BenchResult = { task, without: null, withCctx: null, error: null };
+      try {
+        const wp = join(outputDir, "without", `${task.name}.json`);
+        const cp = join(outputDir, "with", `${task.name}.json`);
+        if (existsSync(wp)) result.without = parseResult(wp);
+        if (existsSync(cp)) result.withCctx = parseResult(cp);
+      } catch (e) {
+        result.error = (e as Error).message;
+      }
+      results.push(result);
+    }
+    return results;
+  }
 
   // Phase 1: Run tasks WITHOUT briefed
   if (!opts.skipWithout) {
@@ -183,6 +210,7 @@ function runClaudeTask(claudePath: string, cwd: string, prompt: string, outputPa
 function backupCctxArtifacts(root: string): boolean {
   const claudeMd = join(root, "CLAUDE.md");
   const rulesDir = join(root, ".claude", "rules");
+  const settingsPath = join(root, ".claude", "settings.json");
   let had = false;
 
   if (existsSync(claudeMd)) {
@@ -201,6 +229,31 @@ function backupCctxArtifacts(root: string): boolean {
       had = true;
     }
   }
+
+  // Also backup settings.json so hooks don't run during "without" phase
+  if (existsSync(settingsPath)) {
+    const settings = readFileSync(settingsPath, "utf-8");
+    if (settings.includes("briefed")) {
+      writeFileSync(settingsPath + ".bak", settings);
+      try {
+        const parsed = JSON.parse(settings);
+        // Remove briefed hooks from settings
+        for (const key of Object.keys(parsed)) {
+          if (key.startsWith("hooks.")) {
+            const hooks = parsed[key];
+            if (Array.isArray(hooks)) {
+              parsed[key] = hooks.filter((h: { command?: string }) =>
+                !h.command?.includes("briefed")
+              );
+            }
+          }
+        }
+        writeFileSync(settingsPath, JSON.stringify(parsed, null, 2));
+      } catch { /* leave as-is if parse fails */ }
+      had = true;
+    }
+  }
+
   return had;
 }
 
@@ -208,6 +261,7 @@ function restoreCctxArtifacts(root: string, had: boolean) {
   if (!had) return;
   const claudeMd = join(root, "CLAUDE.md");
   const rulesDir = join(root, ".claude", "rules");
+  const settingsPath = join(root, ".claude", "settings.json");
 
   if (existsSync(claudeMd + ".bak")) {
     writeFileSync(claudeMd, readFileSync(claudeMd + ".bak", "utf-8"));
@@ -218,5 +272,9 @@ function restoreCctxArtifacts(root: string, had: boolean) {
       writeFileSync(join(rulesDir, f.replace(".bak", "")), readFileSync(join(rulesDir, f)));
       rmSync(join(rulesDir, f));
     }
+  }
+  if (existsSync(settingsPath + ".bak")) {
+    writeFileSync(settingsPath, readFileSync(settingsPath + ".bak", "utf-8"));
+    rmSync(settingsPath + ".bak");
   }
 }

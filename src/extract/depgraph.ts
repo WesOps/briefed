@@ -36,6 +36,7 @@ export function buildDepGraph(
   // Resolve imports and build edges
   for (const ext of extractions) {
     const node = nodes.get(ext.path)!;
+    if (!node.edgeWeights) node.edgeWeights = new Map();
 
     for (const imp of ext.imports) {
       if (!imp.isRelative) continue; // skip external packages
@@ -45,6 +46,10 @@ export function buildDepGraph(
         if (!node.outEdges.includes(resolved)) {
           node.outEdges.push(resolved);
         }
+        // Track edge weight: number of symbols imported
+        const symbolCount = Math.max(imp.names.length, 1);
+        node.edgeWeights.set(resolved, (node.edgeWeights.get(resolved) || 0) + symbolCount);
+
         const targetNode = nodes.get(resolved)!;
         if (!targetNode.inEdges.includes(ext.path)) {
           targetNode.inEdges.push(ext.path);
