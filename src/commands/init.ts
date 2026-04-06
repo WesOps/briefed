@@ -7,16 +7,10 @@ import { runExtractionPipeline } from "../extract/pipeline.js";
 import { generateSkeleton } from "../generate/skeleton.js";
 import { generateModuleIndex, writeModuleIndex, generateSimpleContracts } from "../generate/index-file.js";
 import { formatConventions } from "../extract/conventions.js";
-import { formatUsageExamples } from "../extract/usage-examples.js";
 import { formatSchemas } from "../extract/schema.js";
 import { formatRoutes } from "../extract/routes.js";
 import { formatEnvVars } from "../extract/env.js";
 import { formatScripts } from "../extract/scripts.js";
-import { formatFrontend } from "../extract/frontend.js";
-import { formatInfra } from "../extract/infra.js";
-import { formatRouteCalls } from "../extract/cross-layer.js";
-import { formatChurn } from "../extract/churn.js";
-import { formatCycles } from "../extract/cycles.js";
 import { formatDeps } from "../extract/deps.js";
 import { runDeepAnalysis, buildDeepRules } from "../extract/deep.js";
 import { writeOutputs } from "../deliver/output.js";
@@ -106,11 +100,6 @@ export async function initCommand(opts: InitOptions) {
   if (result.testMappings.length > 0) {
     enrichedSkeleton += "\nTests: " + result.testMappings.length + " source files have matching test files";
   }
-  if (result.errorPatterns.summary.length > 0) {
-    enrichedSkeleton += "\nError handling:\n" + result.errorPatterns.summary.map((s) => `  - ${s}`).join("\n");
-  }
-  const usageText = formatUsageExamples(result.usageExamples);
-  if (usageText) enrichedSkeleton += "\n" + usageText;
   const scriptsText = formatScripts(result.scripts);
   if (scriptsText) enrichedSkeleton += "\n" + scriptsText;
   const schemasText = formatSchemas(result.schemas);
@@ -119,17 +108,6 @@ export async function initCommand(opts: InitOptions) {
   if (routesText) enrichedSkeleton += "\n" + routesText;
   const envText = formatEnvVars(result.envVars);
   if (envText) enrichedSkeleton += "\n" + envText;
-  const frontendText = formatFrontend(result.frontend);
-  if (frontendText) enrichedSkeleton += "\n" + frontendText;
-  const infraText = formatInfra(result.infra);
-  if (infraText) enrichedSkeleton += "\n" + infraText;
-  const crossLayerText = formatRouteCalls(result.crossLayer);
-  if (crossLayerText) enrichedSkeleton += "\n" + crossLayerText;
-  const existingFiles = new Set(result.extractions.map((e) => e.path));
-  const churnText = formatChurn(result.churn, existingFiles);
-  if (churnText) enrichedSkeleton += "\n" + churnText;
-  const cyclesText = formatCycles(result.cycles);
-  if (cyclesText) enrichedSkeleton += "\n" + cyclesText;
   const depsText = formatDeps(result.deps);
   if (depsText) enrichedSkeleton += "\n" + depsText;
 
@@ -143,11 +121,10 @@ export async function initCommand(opts: InitOptions) {
   // Step 7: Write all outputs
   const outputSummary = writeOutputs(root, result, enrichedSkeleton, convText, {
     skipHooks: opts.skipHooks,
-    skipRules: opts.skipRules,
   });
 
-  // Write deep rules into .claude/rules/ alongside gotcha rules. Path-scoped
-  // frontmatter makes them load only when Claude touches files in that dir.
+  // Write deep rules into .claude/rules/. Path-scoped frontmatter makes them
+  // load only when Claude touches files in that dir.
   if (deepRules.size > 0 && !opts.skipRules) {
     const rulesDir = join(root, ".claude", "rules");
     if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
@@ -169,10 +146,8 @@ export async function initCommand(opts: InitOptions) {
   console.log(`    AGENTS.md            — cross-tool context`);
   console.log(`    .github/copilot-instructions.md — GitHub Copilot context`);
   console.log(`    codex.md             — OpenAI Codex CLI context`);
-  console.log(`    .claude/rules/       — gotchas (${result.gotchas.length} constraints, path-scoped)`);
   console.log(`    .briefed/contracts/     — module contracts (${moduleIndex.modules.length} modules)`);
   console.log(`    .briefed/test-map.json  — test mappings (${result.testMappings.length} pairs, ${result.testMappings.reduce((s, t) => s + t.testCount, 0)} tests)`);
-  console.log(`    .briefed/history.json   — git history (${result.histories.size} files)`);
   if (!opts.skipHooks) {
     console.log(`    .claude/settings.json — adaptive hooks`);
   }
@@ -181,17 +156,14 @@ export async function initCommand(opts: InitOptions) {
   }
   // Context budget report
   const skeletonTk = countTokens(enrichedSkeleton);
-  const ruleTokens = result.gotchas.length > 0 ? countTokens(result.gotchas.map((g) => g.text).join("\n")) : 0;
   const totalAlwaysLoaded = skeletonTk;
   const totalPerPrompt = 500; // average contract injection
-  const totalPerFile = Math.round(ruleTokens / Math.max(1, result.gotchas.length)) * 3; // ~3 gotchas per file
 
   console.log("");
   console.log("  Context budget:");
   console.log(`    Always loaded:   ~${formatTokens(totalAlwaysLoaded)} tokens (skeleton + conventions)`);
   console.log(`    Per prompt:      ~${formatTokens(totalPerPrompt)} tokens (adaptive module contracts)`);
-  console.log(`    Per file:        ~${formatTokens(totalPerFile)} tokens (path-scoped gotchas)`);
-  console.log(`    Estimated total: ~${formatTokens(totalAlwaysLoaded + totalPerPrompt + totalPerFile)} tokens/prompt`);
+  console.log(`    Estimated total: ~${formatTokens(totalAlwaysLoaded + totalPerPrompt)} tokens/prompt`);
   console.log("");
   console.log(`  Without briefed, Claude spends ~5K-10K tokens reading files for orientation.`);
   console.log(`  Estimated savings: ~${formatTokens(Math.max(0, 7000 - totalAlwaysLoaded - totalPerPrompt))} tokens/prompt`);

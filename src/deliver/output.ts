@@ -4,25 +4,21 @@ import { updateClaudeMd, saveSkeletonFile } from "./claudemd.js";
 import { installHooks, installMcpServer, generateHookScripts } from "./hooks.js";
 import { writeCursorRules, writeAgentsMd, writeCopilotInstructions, writeCodexMd } from "./cross-tool.js";
 import { installGitHook } from "./git-hook.js";
-import { generateRuleFiles } from "../generate/rules.js";
 import type { ExtractionResult } from "../extract/pipeline.js";
 
 
 export interface OutputSummary {
-  ruleFilesWritten: number;
   hooksInstalled: boolean;
   gitHookInstalled: boolean;
   testMapEntries: number;
-  historyEntries: number;
 }
 
 export interface WriteOutputsOptions {
   skipHooks?: boolean;
-  skipRules?: boolean;
 }
 
 /**
- * Write all output files: skeleton, rules, hooks, cross-tool output, test-map, history.
+ * Write all output files: skeleton, hooks, cross-tool output, test-map.
  */
 export function writeOutputs(
   root: string,
@@ -32,11 +28,9 @@ export function writeOutputs(
   opts: WriteOutputsOptions
 ): OutputSummary {
   const summary: OutputSummary = {
-    ruleFilesWritten: 0,
     hooksInstalled: false,
     gitHookInstalled: false,
     testMapEntries: result.testMappings.length,
-    historyEntries: result.histories.size,
   };
 
   // Ensure .briefed/ directory exists
@@ -53,35 +47,10 @@ export function writeOutputs(
     )
   );
 
-  // Save histories to .briefed/ for hook use (frequency only — used as priority boost)
-  if (result.histories.size > 0) {
-    const histObj: Record<string, number> = {};
-    for (const [file, hist] of result.histories) {
-      if (hist.changeFrequency > 0) {
-        histObj[file] = hist.changeFrequency;
-      }
-    }
-    writeFileSync(join(briefedDir, "history.json"), JSON.stringify(histObj, null, 2));
-  }
-
   // Write skeleton to CLAUDE.md
   console.log("  Writing skeleton to CLAUDE.md...");
   updateClaudeMd(root, enrichedSkeleton);
   saveSkeletonFile(root, enrichedSkeleton);
-
-  // Write rule files from gotchas
-  if (!opts.skipRules) {
-    console.log("  Writing gotchas to .claude/rules/...");
-    const ruleFiles = generateRuleFiles(result.gotchas, root);
-    const rulesDir = join(root, ".claude", "rules");
-    if (!existsSync(rulesDir)) mkdirSync(rulesDir, { recursive: true });
-
-    for (const [filename, content] of ruleFiles) {
-      writeFileSync(join(rulesDir, filename), content);
-    }
-    summary.ruleFilesWritten = ruleFiles.size;
-    console.log(`  Wrote ${ruleFiles.size} rule files`);
-  }
 
   // Always register the briefed MCP server. It's the always-on integration
   // and has zero side effects beyond adding an mcpServers entry to
@@ -91,9 +60,7 @@ export function writeOutputs(
   installMcpServer(root);
   console.log("  briefed MCP server registered in .claude/settings.json");
 
-  // Install event hooks (SessionStart, UserPromptSubmit, PostToolUse, Stop).
-  // These are the "adaptive" pieces — telemetry, learning loop, dynamic
-  // context injection. They're heavier and some users prefer to skip them.
+  // Install event hooks (SessionStart + UserPromptSubmit).
   if (!opts.skipHooks) {
     console.log("  Installing hooks...");
     generateHookScripts(root);
