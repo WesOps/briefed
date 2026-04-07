@@ -316,24 +316,26 @@ export async function runSerenaCompare(opts: RunOptions): Promise<BenchResult[]>
       return [];
     }
 
-    // Sanity: Serena must still be visible (might have been clobbered by
-    // briefed init), and briefed must be registered in the repo's
-    // .claude/settings.json (that's where installMcpServer() writes it —
-    // checking via `claude mcp list` is unreliable because not every Claude
-    // Code version surfaces project-scoped servers from settings.json).
+    // Sanity: Serena must still be visible (briefed init touches
+    // .claude/settings.json so we want to make sure it didn't clobber the
+    // Serena registration on the way through).
     if (!isMcpServerRegistered(claudePath, root, "serena")) {
       console.error("  Error: briefed init clobbered the Serena MCP registration. Aborting.");
       return [];
     }
-    const settingsPath = join(root, ".claude", "settings.json");
-    let briefedRegistered = false;
+    // Sanity: briefed must have actually written its static artifacts to the
+    // repo. We check CLAUDE.md for the briefed-marked block instead of looking
+    // at .claude/settings.json — as of v0.4.0, briefed no longer auto-installs
+    // the MCP server entry, so settings.json is not the source of truth for
+    // "did briefed run." CLAUDE.md is.
+    const briefedClaudeMd = join(root, "CLAUDE.md");
+    let briefedArtifactsPresent = false;
     try {
-      const parsed = JSON.parse(readFileSync(settingsPath, "utf-8"));
-      const servers = (parsed.mcpServers || {}) as Record<string, unknown>;
-      briefedRegistered = Boolean(servers.briefed);
+      const md = readFileSync(briefedClaudeMd, "utf-8");
+      briefedArtifactsPresent = md.includes("<!-- briefed:start -->");
     } catch { /* leave false */ }
-    if (!briefedRegistered) {
-      console.error("  Error: briefed init did not write mcpServers.briefed to .claude/settings.json. Aborting.");
+    if (!briefedArtifactsPresent) {
+      console.error("  Error: briefed init succeeded but did not write a briefed-marked block to CLAUDE.md. Aborting.");
       return [];
     }
 

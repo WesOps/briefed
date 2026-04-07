@@ -1,7 +1,7 @@
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { updateClaudeMd, saveSkeletonFile } from "./claudemd.js";
-import { installHooks, installMcpServer, generateHookScripts } from "./hooks.js";
+import { installHooks, generateHookScripts } from "./hooks.js";
 import { writeCursorRules, writeAgentsMd, writeCopilotInstructions, writeCodexMd } from "./cross-tool.js";
 import { installGitHook } from "./git-hook.js";
 import type { ExtractionResult } from "../extract/pipeline.js";
@@ -52,13 +52,15 @@ export function writeOutputs(
   updateClaudeMd(root, enrichedSkeleton);
   saveSkeletonFile(root, enrichedSkeleton);
 
-  // Always register the briefed MCP server. It's the always-on integration
-  // and has zero side effects beyond adding an mcpServers entry to
-  // .claude/settings.json. Bundling this with --skip-hooks would silently
-  // disable Claude's ability to call briefed_find_usages / briefed_blast_radius
-  // / etc., which is exactly the wrong thing for a "minimal install" flag.
-  installMcpServer(root);
-  console.log("  briefed MCP server registered in .claude/settings.json");
+  // NOTE: briefed used to auto-register an MCP server entry in
+  // .claude/settings.json here. The audit for v0.4.0 confirmed that
+  // `claude -p` does not load MCP servers from project-scoped settings,
+  // and the model never called any briefed.* tools across the entire
+  // bench. Auto-install was misleading dead code, so it was removed.
+  // The MCP server itself (`briefed mcp` command, src/mcp/) is still
+  // shipped — users who want it can register at user scope manually:
+  //   claude mcp add briefed --scope user node /path/to/dist/cli.js mcp --repo .
+  // Future: package as a Claude Code plugin so it loads automatically.
 
   // Install event hooks (SessionStart + UserPromptSubmit).
   if (!opts.skipHooks) {

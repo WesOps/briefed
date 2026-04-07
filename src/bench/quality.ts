@@ -286,22 +286,22 @@ function applyArmState(corpusPath: string, arm: ArmConfig, claudePath: string): 
     if (result.status !== 0) {
       throw new Error(`briefed init exited with status ${result.status ?? "unknown"}`);
     }
-    // Sanity: briefed must be in .claude/settings.json after init.
-    // We deliberately do NOT use `claude mcp list` here — it doesn't reliably
-    // surface project-scoped servers from settings.json, which is exactly what
-    // briefed init writes. See runner.ts runSerenaCompare for the same pattern
-    // and commit 75e8902 for the original fix.
-    const briefedSettingsPath = join(corpusPath, ".claude", "settings.json");
-    let briefedRegistered = false;
+    // Sanity: briefed must have actually written its static artifacts. As of
+    // v0.4.0 the auto-install of mcpServers.briefed was removed (see
+    // src/deliver/output.ts), so settings.json is no longer the source of
+    // truth for "did briefed run." CLAUDE.md with the briefed-marked block
+    // is — that's where the skeleton, schema, routes, conventions, and env
+    // dump all live, which is the entire surface this arm exercises.
+    const briefedClaudeMd = join(corpusPath, "CLAUDE.md");
+    let briefedArtifactsPresent = false;
     try {
-      const parsed = JSON.parse(readFileSync(briefedSettingsPath, "utf-8"));
-      const servers = (parsed.mcpServers || {}) as Record<string, unknown>;
-      briefedRegistered = Boolean(servers.briefed);
+      const md = readFileSync(briefedClaudeMd, "utf-8");
+      briefedArtifactsPresent = md.includes("<!-- briefed:start -->");
     } catch { /* leave false */ }
-    if (!briefedRegistered) {
+    if (!briefedArtifactsPresent) {
       throw new Error(
-        `briefed init succeeded but did not write mcpServers.briefed to ${briefedSettingsPath}. ` +
-          `This arm cannot exercise briefed's MCP surface — aborting to avoid misleading bench numbers.`,
+        `briefed init succeeded but did not write a briefed-marked block to ${briefedClaudeMd}. ` +
+          `This arm cannot exercise briefed's context surface — aborting to avoid misleading bench numbers.`,
       );
     }
   }
