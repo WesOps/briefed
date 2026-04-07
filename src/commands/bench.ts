@@ -6,6 +6,7 @@ import {
   generateReport,
   generateSerenaReport,
 } from "../bench/runner.js";
+import { runQualityBench, generateQualityReport } from "../bench/quality.js";
 
 interface BenchOptions {
   repo: string;
@@ -19,10 +20,44 @@ interface BenchOptions {
   resume?: boolean;
   compareDeep?: boolean;
   serenaCompare?: boolean;
+  quality?: boolean;
+  arms?: string;
+  rerun?: string;
+  corpusRepo?: string;
+  corpusRef?: string;
 }
 
 export async function benchCommand(opts: BenchOptions) {
   const root = resolve(opts.repo);
+
+  if (opts.quality) {
+    console.log("  briefed bench --quality — 4-arm correctness + tokens + speed");
+    console.log(`  Host repo (output dir parent): ${root}\n`);
+    const results = await runQualityBench({
+      repo: root,
+      quick: opts.quick,
+      full: opts.full,
+      reportOnly: opts.reportOnly,
+      arms: opts.arms,
+      rerun: opts.rerun,
+      corpusRepo: opts.corpusRepo,
+      corpusRef: opts.corpusRef,
+      timeoutMs: opts.timeout ? parseInt(opts.timeout, 10) * 1000 : undefined,
+      resume: opts.resume,
+      outputDir: opts.output,
+    });
+    if (results.length === 0) process.exit(1);
+
+    const report = generateQualityReport(results);
+    console.log("\n" + report);
+
+    const outDir = join(root, ".briefed", "bench", "quality");
+    if (existsSync(outDir)) {
+      writeFileSync(join(outDir, "report.txt"), report);
+      console.log(`\n  Report saved to ${join(outDir, "report.txt")}`);
+    }
+    return;
+  }
 
   if (opts.serenaCompare) {
     console.log("  briefed bench — Serena vs Serena+briefed");
