@@ -286,10 +286,21 @@ function applyArmState(corpusPath: string, arm: ArmConfig, claudePath: string): 
     if (result.status !== 0) {
       throw new Error(`briefed init exited with status ${result.status ?? "unknown"}`);
     }
-    // Sanity: briefed MCP must be registered after init, otherwise the run is meaningless
-    if (!isMcpServerRegistered(claudePath, corpusPath, "briefed")) {
+    // Sanity: briefed must be in .claude/settings.json after init.
+    // We deliberately do NOT use `claude mcp list` here — it doesn't reliably
+    // surface project-scoped servers from settings.json, which is exactly what
+    // briefed init writes. See runner.ts runSerenaCompare for the same pattern
+    // and commit 75e8902 for the original fix.
+    const briefedSettingsPath = join(corpusPath, ".claude", "settings.json");
+    let briefedRegistered = false;
+    try {
+      const parsed = JSON.parse(readFileSync(briefedSettingsPath, "utf-8"));
+      const servers = (parsed.mcpServers || {}) as Record<string, unknown>;
+      briefedRegistered = Boolean(servers.briefed);
+    } catch { /* leave false */ }
+    if (!briefedRegistered) {
       throw new Error(
-        `briefed init succeeded but the briefed MCP server is not registered for ${corpusPath}. ` +
+        `briefed init succeeded but did not write mcpServers.briefed to ${briefedSettingsPath}. ` +
           `This arm cannot exercise briefed's MCP surface — aborting to avoid misleading bench numbers.`,
       );
     }
