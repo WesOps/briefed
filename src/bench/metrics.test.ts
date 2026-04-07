@@ -1,12 +1,21 @@
-import { describe, it, expect } from "vitest";
-import { writeFileSync, mkdtempSync } from "fs";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { writeFileSync, mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { parseResult } from "./metrics.js";
 
 describe("parseResult", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "briefed-bench-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("captures finalAnswer from result event", () => {
-    const dir = mkdtempSync(join(tmpdir(), "briefed-bench-test-"));
     const file = join(dir, "t.json");
     const events = [
       { type: "assistant", message: { usage: { input_tokens: 10, output_tokens: 5 }, content: [] } },
@@ -27,8 +36,7 @@ describe("parseResult", () => {
     expect(m.correctness).toBeNull();
   });
 
-  it("finalAnswer empty string when no result field", () => {
-    const dir = mkdtempSync(join(tmpdir(), "briefed-bench-test-"));
+  it("returns empty finalAnswer when result field is missing", () => {
     const file = join(dir, "t.json");
     writeFileSync(
       file,
