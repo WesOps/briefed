@@ -139,12 +139,16 @@ export async function runQualityBench(opts: QualityOptions): Promise<QualityCell
   process.once("SIGTERM", () => { restore(); process.exit(143); });
 
   const results: QualityCellResult[] = [];
+  const pushedKeys = new Set<string>();
 
   // Parse rerun spec: "arm=D,task=env-var-audit" → {"D:env-var-audit"}
+  // Multiple pairs allowed: "arm=A,task=x,arm=B,task=y" → {"A:x", "B:y"}
   const rerunSet = new Set<string>();
   if (opts.rerun) {
-    const m = opts.rerun.match(/arm=([A-Z])\s*[,;]\s*task=([a-z-]+)/i);
-    if (m) rerunSet.add(`${m[1].toUpperCase()}:${m[2]}`);
+    const matches = opts.rerun.matchAll(/arm=([A-Z])\s*,\s*task=([a-z-]+)/gi);
+    for (const m of matches) {
+      rerunSet.add(`${m[1].toUpperCase()}:${m[2]}`);
+    }
   }
 
   try {
@@ -160,6 +164,7 @@ export async function runQualityBench(opts: QualityOptions): Promise<QualityCell
           console.error(`    arm setup failed: ${msg.slice(0, 200)}`);
           for (const task of tasks) {
             results.push({ arm, task, metrics: null, error: `arm setup failed: ${msg}` });
+            pushedKeys.add(`${arm.label}:${task.name}`);
           }
           continue;
         }
@@ -219,6 +224,7 @@ export async function runQualityBench(opts: QualityOptions): Promise<QualityCell
   // Collect final results
   for (const arm of arms) {
     for (const task of tasks) {
+      if (pushedKeys.has(`${arm.label}:${task.name}`)) continue;
       const out = join(outputDir, arm.label, `${task.name}.json`);
       if (!existsSync(out)) {
         results.push({ arm, task, metrics: null, error: "no transcript" });
@@ -228,9 +234,27 @@ export async function runQualityBench(opts: QualityOptions): Promise<QualityCell
         const m = parseResult(out);
         const judgeOut = out + ".judge.json";
         if (existsSync(judgeOut)) {
-          const judged = JSON.parse(readFileSync(judgeOut, "utf-8"));
-          if (judged && typeof judged.overall === "number") {
-            m.correctness = judged;
+          try {
+            const judged = JSON.parse(readFileSync(judgeOut, "utf-8")) as Record<string, unknown>;
+            if (
+              judged &&
+              typeof judged.coverage === "number" && Number.isInteger(judged.coverage) &&
+              typeof judged.accuracy === "number" && Number.isInteger(judged.accuracy) &&
+              typeof judged.specificity === "number" && Number.isInteger(judged.specificity) &&
+              typeof judged.overall === "number" && Number.isInteger(judged.overall) &&
+              typeof judged.justification === "string"
+            ) {
+              m.correctness = {
+                coverage: judged.coverage,
+                accuracy: judged.accuracy,
+                specificity: judged.specificity,
+                overall: judged.overall,
+                justification: judged.justification,
+              };
+            }
+            // If validation fails, leave m.correctness as null and the cell shows "unscored"
+          } catch {
+            // Bad JSON in the .judge.json file — leave correctness as null
           }
         }
         results.push({ arm, task, metrics: m, error: null });
@@ -261,6 +285,13 @@ function applyArmState(corpusPath: string, arm: ArmConfig, claudePath: string): 
     });
     if (result.status !== 0) {
       throw new Error(`briefed init exited with status ${result.status ?? "unknown"}`);
+    }
+    // Sanity: briefed MCP must be registered after init, otherwise the run is meaningless
+    if (!isMcpServerRegistered(claudePath, corpusPath, "briefed")) {
+      throw new Error(
+        `briefed init succeeded but the briefed MCP server is not registered for ${corpusPath}. ` +
+          `This arm cannot exercise briefed's MCP surface — aborting to avoid misleading bench numbers.`,
+      );
     }
   }
 
