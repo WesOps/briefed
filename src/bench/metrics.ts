@@ -1,5 +1,13 @@
 import { readFileSync } from "fs";
 
+export interface CorrectnessScore {
+  coverage: number;        // 1-5
+  accuracy: number;        // 1-5
+  specificity: number;     // 1-5
+  overall: number;         // 1-5
+  justification: string;
+}
+
 /**
  * Metrics extracted from a `claude -p --output-format json` result.
  */
@@ -21,6 +29,10 @@ export interface TaskMetrics {
   mcpCalls: number;       // Any MCP tool call (Serena, briefed, etc.)
   totalToolCalls: number; // Every tool call, period — the real "hunting cost"
   mcpCallsByServer: Record<string, number>; // e.g. {"serena": 4, "briefed": 2}
+  /** Final user-visible answer extracted from the transcript's `result` event. */
+  finalAnswer: string;
+  /** LLM-as-judge score. Null until a judge pass runs. */
+  correctness: CorrectnessScore | null;
 }
 
 /**
@@ -62,6 +74,8 @@ export function parseResult(filePath: string): TaskMetrics {
 
   const num = (v: unknown): number => (typeof v === "number" ? v : 0);
   const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+  const finalAnswer = str(data.result);
 
   // Walk every assistant message in the stream and accumulate per-turn token
   // usage AND tool_use calls. The result event's usage only reflects the final
@@ -152,6 +166,8 @@ export function parseResult(filePath: string): TaskMetrics {
     mcpCalls,
     totalToolCalls,
     mcpCallsByServer,
+    finalAnswer,
+    correctness: null,
   };
 }
 
