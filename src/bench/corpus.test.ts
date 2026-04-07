@@ -64,11 +64,7 @@ describe("ensureCorpus", () => {
     mockRevparse.mockRejectedValue(new Error("corrupted index"));
 
     await expect(ensureCorpus(DEFAULT_CORPUS, cacheRoot)).rejects.toThrow(
-      expect.objectContaining({
-        message: expect.stringContaining("epic-stack") &&
-          expect.stringContaining("19eeb4ba") &&
-          expect.stringContaining("Delete the directory"),
-      }),
+      /epic-stack[\s\S]*19eeb4ba[\s\S]*Delete the directory/,
     );
   });
 
