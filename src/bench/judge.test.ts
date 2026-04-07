@@ -60,4 +60,22 @@ describe("parseJudgeResponse", () => {
       parseJudgeResponse('{"coverage":7,"accuracy":3,"specificity":3,"overall":3,"justification":"x"}'),
     ).toBeNull();
   });
+
+  it("returns null when a score is 0 (out of range low)", () => {
+    expect(
+      parseJudgeResponse('{"coverage":0,"accuracy":3,"specificity":3,"overall":3,"justification":"x"}'),
+    ).toBeNull();
+  });
+
+  it("returns null when a score is non-integer", () => {
+    expect(
+      parseJudgeResponse('{"coverage":3.5,"accuracy":3,"specificity":3,"overall":3,"justification":"x"}'),
+    ).toBeNull();
+  });
+
+  it("returns null when justification is not a string", () => {
+    expect(
+      parseJudgeResponse('{"coverage":3,"accuracy":3,"specificity":3,"overall":3,"justification":null}'),
+    ).toBeNull();
+  });
 });

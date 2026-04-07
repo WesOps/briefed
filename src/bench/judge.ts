@@ -60,7 +60,7 @@ export function parseJudgeResponse(raw: string): CorrectnessScore | null {
   const requiredNumFields = ["coverage", "accuracy", "specificity", "overall"] as const;
   for (const k of requiredNumFields) {
     const v = p[k];
-    if (typeof v !== "number" || v < 1 || v > 5) return null;
+    if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 5) return null;
   }
   if (typeof p.justification !== "string") return null;
 

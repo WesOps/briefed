@@ -1,10 +1,10 @@
 import { readFileSync } from "fs";
 
 export interface CorrectnessScore {
-  coverage: number;        // 1-5
-  accuracy: number;        // 1-5
-  specificity: number;     // 1-5
-  overall: number;         // 1-5
+  coverage: number;        // integer 1-5
+  accuracy: number;        // integer 1-5
+  specificity: number;     // integer 1-5
+  overall: number;         // integer 1-5
   justification: string;
 }
 
