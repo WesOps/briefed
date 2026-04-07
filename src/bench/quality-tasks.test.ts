@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { QUALITY_TASKS } from "./quality-tasks.js";
+import { QUALITY_TASKS, QUALITY_TASKS_PINNED_SHA } from "./quality-tasks.js";
+import { DEFAULT_CORPUS } from "./corpus.js";
 
 describe("QUALITY_TASKS", () => {
   it("has exactly 4 tasks", () => {
@@ -28,5 +29,9 @@ describe("QUALITY_TASKS", () => {
       "list-routes",
       "trace-auth-flow",
     ]);
+  });
+
+  it("pinned SHA matches DEFAULT_CORPUS.ref (rubric/corpus drift guard)", () => {
+    expect(QUALITY_TASKS_PINNED_SHA).toBe(DEFAULT_CORPUS.ref);
   });
 });

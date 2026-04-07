@@ -8,6 +8,13 @@
  * If you change the pinned ref or swap corpora, you MUST re-author every rubric.
  */
 
+/**
+ * SHA this rubric set was authored against. Must equal `DEFAULT_CORPUS.ref`
+ * in `corpus.ts`. Bumping the corpus without re-authoring rubrics is a
+ * silent-failure-mode bug, so we lock these in code with a sibling test.
+ */
+export const QUALITY_TASKS_PINNED_SHA = "19eeb4ba358781ea447762e70403f7b78994db10";
+
 export interface QualityRubric {
   mustContain: string[];
   mustNotHallucinate: string[];
@@ -31,7 +38,7 @@ export const QUALITY_TASKS: QualityTask[] = [
         "server/",
         "prisma/",
         "server/index.ts",
-        "express",
+        "Express",
         "React Router",
       ],
       mustNotHallucinate: [
@@ -91,7 +98,7 @@ export const QUALITY_TASKS: QualityTask[] = [
       mustContain: [
         // Verified by reading app/routes/_auth/login.tsx and login.server.ts at pinned commit
         "app/routes/_auth/login.tsx",
-        "login",
+        "verifyUserPassword",
         "handleNewSession",
         "authSessionStorage",
         "Session",
