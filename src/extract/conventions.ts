@@ -185,6 +185,7 @@ export function formatConventions(conv: ProjectConventions): string {
     ...conv.naming,
     ...conv.errorHandling,
     ...conv.patterns,
+    ...conv.testing,
     ...conv.imports,
     ...conv.other,
   ];

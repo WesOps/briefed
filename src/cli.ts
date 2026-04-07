@@ -17,7 +17,7 @@ program
   .description(
     "Adaptive Context Engine — compile your codebase into focused, token-efficient context for AI coding tools"
   )
-  .version("0.3.0");
+  .version("0.6.0");
 
 program
   .command("init")
@@ -61,6 +61,11 @@ program
   .option("--no-resume", "Re-run tasks even if cached results exist")
   .option("--compare-deep", "Also run a third arm with `briefed init --deep` (LLM-annotated rules via claude -p)")
   .option("--serena-compare", "Compare Serena-only vs Serena+briefed. Requires Serena pre-registered in .claude/settings.json")
+  .option("--quality", "Quality bench: 4-arm matrix + LLM-as-judge correctness scoring")
+  .option("--arms <list>", "Comma-separated arm subset, e.g. `C,D` (quality mode only)")
+  .option("--rerun <spec>", "Re-run specific cells, e.g. `arm=D,task=env-var-audit`")
+  .option("--corpus-repo <url>", "Override bench corpus repo URL (quality mode only)")
+  .option("--corpus-ref <sha>", "Override bench corpus ref (quality mode only)")
   .action(benchCommand);
 
 program

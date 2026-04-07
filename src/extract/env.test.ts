@@ -25,8 +25,9 @@ describe("extractEnvVars", () => {
 
     const dbVar = vars.find((v) => v.name === "DATABASE_URL");
     expect(dbVar).toBeDefined();
-    expect(dbVar!.hasDefault).toBe(true);
-    expect(dbVar!.required).toBe(false);
+    // Values in .env.example are placeholder examples, not runtime defaults.
+    expect(dbVar!.hasDefault).toBe(false);
+    expect(dbVar!.required).toBe(true);
     expect(dbVar!.description).toBe("Database connection");
     expect(dbVar!.category).toBe("database");
 
@@ -100,7 +101,7 @@ describe("extractEnvVars", () => {
     expect(vars).toHaveLength(0);
   });
 
-  it("treats empty and quoted-empty values as required", () => {
+  it("treats every .env.example entry as required regardless of placeholder value", () => {
     writeFileSync(
       join(tmpDir, ".env.example"),
       `EMPTY=\nQUOTED_EMPTY=""\nSINGLE_QUOTED=''\nHAS_VALUE=something\n`
@@ -109,7 +110,35 @@ describe("extractEnvVars", () => {
     expect(vars.find((v) => v.name === "EMPTY")!.required).toBe(true);
     expect(vars.find((v) => v.name === "QUOTED_EMPTY")!.required).toBe(true);
     expect(vars.find((v) => v.name === "SINGLE_QUOTED")!.required).toBe(true);
-    expect(vars.find((v) => v.name === "HAS_VALUE")!.required).toBe(false);
+    // HAS_VALUE has a placeholder value but is still required — `.env.example`
+    // values are documentation, not runtime defaults.
+    expect(vars.find((v) => v.name === "HAS_VALUE")!.required).toBe(true);
+    expect(vars.find((v) => v.name === "HAS_VALUE")!.hasDefault).toBe(false);
+  });
+
+  // Regression for the inverted-extraction bug found in the v0.4.0 audit:
+  // briefed used to mark `.env.example` placeholder values as `hasDefault`,
+  // which silently dropped DATABASE_URL / SESSION_SECRET / etc. from the
+  // skeleton's "Required env" output and instead listed CI tooling vars matched
+  // from `process.env.X` source references as required.
+  it("surfaces realistic placeholder-style entries in formatEnvVars output", () => {
+    writeFileSync(
+      join(tmpDir, ".env.example"),
+      `SESSION_SECRET="super-duper-s3cret"\nDATABASE_URL="postgres://localhost:5432/mydb"\nHONEYPOT_SECRET="placeholder"\n`,
+    );
+    const vars = extractEnvVars(tmpDir);
+
+    for (const name of ["SESSION_SECRET", "DATABASE_URL", "HONEYPOT_SECRET"]) {
+      const v = vars.find((x) => x.name === name);
+      expect(v, `${name} should be extracted`).toBeDefined();
+      expect(v!.hasDefault).toBe(false);
+      expect(v!.required).toBe(true);
+    }
+
+    const formatted = formatEnvVars(vars);
+    expect(formatted).toContain("SESSION_SECRET");
+    expect(formatted).toContain("DATABASE_URL");
+    expect(formatted).toContain("HONEYPOT_SECRET");
   });
 });
 

@@ -88,14 +88,18 @@ function parseEnvFile(content: string, source: string, vars: Map<string, EnvVar>
     const match = trimmed.match(/^(\w+)\s*=\s*(.*)/);
     if (match) {
       const name = match[1];
-      const value = match[2].trim();
-      const hasDefault = value.length > 0 && value !== '""' && value !== "''";
-
+      // Every variable declared in `.env.example` (or `.env.sample`, etc.) is
+      // something the user is expected to provide. The value next to the `=`
+      // is a *placeholder* for documentation, not a runtime default — that's
+      // the universal convention these files follow. Treating placeholder
+      // values as defaults made the skeleton silently drop the actual required
+      // config (DATABASE_URL, SESSION_SECRET, …) while listing CI tooling vars
+      // matched from `process.env.X` source references as "required" instead.
       vars.set(name, {
         name,
         source,
-        hasDefault,
-        required: !hasDefault,
+        hasDefault: false,
+        required: true,
         description: lastComment || null,
         category: categorizeEnvVar(name),
       });

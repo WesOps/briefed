@@ -1,12 +1,6 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { debug } from "../utils/log.js";
-
-interface McpServer {
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-}
 
 interface ClaudeSettings {
   hooks?: Record<string, Array<{
@@ -17,88 +11,7 @@ interface ClaudeSettings {
       timeout?: number;
     }>;
   }>>;
-  mcpServers?: Record<string, McpServer>;
   [key: string]: unknown;
-}
-
-/**
- * Register the briefed MCP server in .claude/settings.json without touching
- * event hooks. The MCP server is the always-on, low-cost integration: it
- * exposes briefed's lookup tools (find_usages, blast_radius, schema, routes,
- * symbol) so Claude can call them directly. We register it independently of
- * event hooks so that `briefed init --skip-hooks` (a common choice for users
- * who don't want SessionStart/PostToolUse plumbing) still gets MCP.
- */
-export function installMcpServer(root: string) {
-  const claudeDir = join(root, ".claude");
-  const settingsPath = join(claudeDir, "settings.json");
-
-  if (!existsSync(claudeDir)) {
-    mkdirSync(claudeDir, { recursive: true });
-  }
-
-  let settings: ClaudeSettings = {};
-  if (existsSync(settingsPath)) {
-    try {
-      settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
-    } catch (e) {
-      debug(`failed to parse settings.json, starting fresh: ${(e as Error).message}`);
-      settings = {};
-    }
-  }
-
-  if (!settings.mcpServers) settings.mcpServers = {};
-  const isBriefedRepo = (() => {
-    try {
-      const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
-      return pkg.name === "briefed" && existsSync(join(root, "dist", "cli.js"));
-    } catch {
-      return false;
-    }
-  })();
-
-  // Resolve absolute paths for the MCP server command. macOS GUI Claude Code
-  // launches with a minimal PATH that excludes asdf/nvm/volta/fnm shim
-  // directories, so a bare `"command": "briefed"` works in the terminal but
-  // fails when Claude tries to spawn the MCP server. By writing absolute
-  // paths to node + cli.js we bypass version-manager shims entirely.
-  if (isBriefedRepo) {
-    settings.mcpServers["briefed"] = {
-      command: process.execPath, // absolute path to the running node binary
-      args: [join(root, "dist", "cli.js"), "mcp", "--repo", root],
-    };
-  } else {
-    // We're being run by an installed briefed CLI. import.meta.dirname is
-    // dist/deliver/ inside the install — walk up to find dist/cli.js and
-    // resolve it to a real absolute path that Claude Code can spawn without
-    // any PATH lookups or shim resolution.
-    let cliJsPath: string | null = null;
-    try {
-      const candidate = join(import.meta.dirname, "..", "cli.js");
-      if (existsSync(candidate)) {
-        cliJsPath = realpathSync(candidate);
-      }
-    } catch {
-      cliJsPath = null;
-    }
-
-    if (cliJsPath) {
-      settings.mcpServers["briefed"] = {
-        command: process.execPath,
-        args: [cliJsPath, "mcp", "--repo", root],
-      };
-    } else {
-      // Last-resort fallback: bare command. Better than nothing, but users
-      // on version managers launching Claude Code from the GUI will hit PATH
-      // issues and need to fix this manually.
-      settings.mcpServers["briefed"] = {
-        command: "briefed",
-        args: ["mcp", "--repo", root],
-      };
-    }
-  }
-
-  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 }
 
 /**
@@ -167,11 +80,10 @@ export function installHooks(root: string) {
     ],
   });
 
-  // MCP server registration is handled by installMcpServer() — called
-  // unconditionally from writeOutputs so --skip-hooks still gets MCP. We
-  // intentionally don't touch settings.mcpServers here to avoid clobbering
-  // the absolute-path resolution that installMcpServer does for asdf/nvm/
-  // volta/fnm users.
+  // No MCP registration here. The auto-install of mcpServers.briefed was
+  // removed in v0.4.0 — see the note in src/deliver/output.ts and the
+  // src/mcp/ directory for the still-shipped MCP server users can register
+  // at user scope manually.
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 }
