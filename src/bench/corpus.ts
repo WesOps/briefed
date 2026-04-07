@@ -25,29 +25,48 @@ export async function ensureCorpus(spec: CorpusSpec, cacheRoot: string): Promise
   const target = join(cacheRoot, spec.name);
 
   if (existsSync(join(target, ".git"))) {
+    const git = simpleGit(target);
     try {
-      const git = simpleGit(target);
       const head = (await git.revparse(["HEAD"])).trim();
       if (head === spec.ref) return target;
       await git.checkout(spec.ref);
       return target;
-    } catch {
-      // fall through
+    } catch (e) {
+      throw new Error(
+        `Failed to reuse cached corpus at ${target} (pinned ${spec.name}@${spec.ref}): ${(e as Error).message}. Delete the directory and re-run to fetch a fresh copy.`,
+      );
     }
   }
 
   if (existsSync(target)) {
+    // Non-git directory escape hatch: user-supplied checkout. Pinned ref is NOT enforced.
+    console.warn(
+      `[corpus] ${target} exists but is not a git checkout; reusing as-is (pinned ref ${spec.ref} NOT enforced).`,
+    );
     return target;
   }
 
-  const git = simpleGit();
-  await git.clone(spec.url, target, ["--depth", "1", "--no-single-branch"]);
+  try {
+    const git = simpleGit();
+    await git.clone(spec.url, target, ["--depth", "1", "--no-single-branch"]);
+  } catch (e) {
+    throw new Error(
+      `Failed to clone ${spec.name} from ${spec.url}: ${(e as Error).message}`,
+    );
+  }
+
   const repo = simpleGit(target);
   try {
     await repo.checkout(spec.ref);
   } catch {
-    await repo.fetch(["--unshallow"]);
-    await repo.checkout(spec.ref);
+    try {
+      await repo.fetch(["--unshallow"]);
+      await repo.checkout(spec.ref);
+    } catch (e) {
+      throw new Error(
+        `Failed to check out ${spec.name}@${spec.ref} from ${spec.url} after unshallow: ${(e as Error).message}`,
+      );
+    }
   }
   return target;
 }
