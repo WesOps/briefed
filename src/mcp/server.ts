@@ -13,7 +13,7 @@ export async function startMcpServer(repoPath: string) {
 
   const server = new McpServer({
     name: "briefed",
-    version: "0.6.0",
+    version: "1.0.0",
   });
 
   server.tool(

@@ -4,8 +4,31 @@
 
 briefed scans your repository and produces a layered context snapshot that Claude Code, Cursor, Copilot, and any tool reading `AGENTS.md` load automatically — so the AI starts oriented instead of grepping around.
 
+## Headline (v1.0.0, n=4 paired bench)
+
+On a 4-task paired comparison against [epicweb-dev/epic-stack](https://github.com/epicweb-dev/epic-stack) at a pinned commit:
+
+| Configuration | Input tokens (mean) | Wall time (mean) | Correctness |
+|---|---|---|---|
+| Serena alone | 874K | 100s | 5/5 |
+| **Serena + briefed (with hooks)** | **312K** | **64s** | **5/5** |
+
+**−64% input tokens, −36% wall time, equal correctness.** Hooks are where most of the win comes from — the static skeleton alone is only ~18% better than Serena. The adaptive per-prompt context injection pushes it to 64%. Run `briefed bench --quality --full --arms C,D,G` to reproduce.
+
+## Install — pick your path
+
+**Claude Code users (recommended):** install as a Claude Code plugin so the MCP server actually loads and the hooks register globally.
+
 ```bash
-npx briefed init
+claude plugin marketplace add WesOps/briefed
+claude plugin install briefed
+```
+
+**Cursor / Copilot / Codex / other tools:** install via npm and run the CLI per-project. You get the static skeleton + cross-tool output but not the MCP server (which currently only loads via the Claude Code plugin path).
+
+```bash
+npm install -g briefed
+briefed init
 ```
 
 That's it. briefed installs a git post-commit hook and re-indexes after every commit.
