@@ -32,18 +32,24 @@ export function issueCandidates(root: string, issueText: string): CallToolResult
     let score = 0;
     const matches: string[] = [];
 
-    for (const sym of ext.symbols) {
-      const haystack = [
-        sym.name.toLowerCase(),
-        sym.signature.toLowerCase(),
-        sym.description?.toLowerCase() ?? "",
-      ].join(" ");
-
-      for (const term of terms) {
+    // Score per term per file: each term contributes once, weighted by whether
+    // any matching symbol is exported. This prevents files with many symbols
+    // from getting inflated scores just because a term appears in many symbols.
+    for (const term of terms) {
+      let termScore = 0;
+      for (const sym of ext.symbols) {
+        const haystack = [
+          sym.name.toLowerCase(),
+          sym.signature.toLowerCase(),
+          sym.description?.toLowerCase() ?? "",
+        ].join(" ");
         if (haystack.includes(term)) {
-          score += sym.exported ? 2 : 1; // exported symbols are higher signal
-          if (!matches.includes(term)) matches.push(term);
+          termScore = Math.max(termScore, sym.exported ? 2 : 1);
         }
+      }
+      if (termScore > 0) {
+        score += termScore;
+        if (!matches.includes(term)) matches.push(term);
       }
     }
 

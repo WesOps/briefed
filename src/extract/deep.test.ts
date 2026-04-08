@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildDeepRules, __test } from "./deep.js";
 import type { FileExtraction, Symbol } from "./signatures.js";
 
-const { hashFileForCache, parseBatchResponse, sliceRelevantLines, scoreFile } = __test;
+const { hashFileForCache, parseBatchResponse, sliceRelevantLines, scoreFile, getGitSignals } = __test;
 
 function makeSym(name: string, line: number, opts: Partial<Symbol> = {}): Symbol {
   return {
@@ -151,6 +151,26 @@ describe("scoreFile", () => {
       symbolRefs: new Map(),
     };
     expect(scoreFile(ext, graph, new Map(), new Map(), new Set())).toBe(0);
+  });
+});
+
+describe("getGitSignals", () => {
+  it("returns a map with commit counts for a real git repo", () => {
+    // Use the briefed repo itself — it definitely has git history
+    const repoRoot = new URL("../../", import.meta.url).pathname.replace(/\/$/, "");
+    const signals = getGitSignals(repoRoot);
+    // Should have at least one entry (briefed has many commits)
+    expect(signals.size).toBeGreaterThan(0);
+    // Every entry should have a non-negative commit count
+    for (const [, s] of signals) {
+      expect(s.commits).toBeGreaterThanOrEqual(1);
+      expect(s.minorAuthors).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("returns empty map for a non-git directory", () => {
+    const signals = getGitSignals("/tmp");
+    expect(signals.size).toBe(0);
   });
 });
 

@@ -82,7 +82,7 @@ function getGitSignals(root: string): Map<string, GitSignals> {
 
     const out = spawnSync(
       "git",
-      ["log", "--name-only", `--format=COMMIT:%ae`, `--since=${sinceStr}`, "--diff-filter=M"],
+      ["log", "--name-only", `--format=COMMIT:%ae`, `--since=${sinceStr}`, "--diff-filter=ACMR"],
       { cwd: root, encoding: "utf-8", timeout: 10_000, shell: false },
     );
     if (out.status !== 0 || !out.stdout) return result;
@@ -485,7 +485,7 @@ function scoreFile(
   const churnNorm = Math.min((git?.commits || 0) / 30, 1); // cap at 30 commits/year
   const minorNorm = Math.min((git?.minorAuthors || 0) / 5, 1);
   const fanOutNorm = Math.min(fanOut / 15, 1);
-  const complexNorm = complexity / 10;
+  const complexNorm = Math.min(complexity / 10, 1);
 
   return (
     churnNorm * 3.0 +     // highest weight: best defect predictor
