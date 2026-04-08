@@ -350,7 +350,7 @@ export function buildDeepRules(
           sig: sym.signature,
           desc,
           calls: sym.calls?.slice(0, 5),
-          throws: sym.throws,
+          throws: sym.throws?.slice(0, 5),
           callers: callers?.map(c => c.split("/").pop() || c),
         });
       }
@@ -394,7 +394,7 @@ export function buildDeepRules(
       }
       const testNames = testNamesByFile.get(entry.file);
       if (testNames && testNames.length > 0) {
-        lines.push(`  Tests: ${testNames.map(n => `"${n}"`).join(", ")}`);
+        lines.push(`- Tests: ${testNames.map(n => `"${n}"`).join(", ")}`);
       }
       lines.push("");
     }
