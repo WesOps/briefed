@@ -8,12 +8,16 @@ briefed scans your repository and produces a layered context snapshot that Claud
 
 On a 4-task paired comparison against [epicweb-dev/epic-stack](https://github.com/epicweb-dev/epic-stack) at a pinned commit:
 
-| Configuration | Input tokens (mean) | Wall time (mean) | Correctness |
-|---|---|---|---|
-| Serena alone | 874K | 100s | 5/5 |
-| **Serena + briefed (with hooks)** | **312K** | **64s** | **5/5** |
+| Configuration | Wall time (mean) | Correctness | $/task | Input tokens |
+|---|---|---|---|---|
+| Serena alone | 100s | 5/5 | $0.43 | 874K |
+| **Serena + briefed (with hooks)** | **64s** | **5/5** | **$0.38** | **312K** |
 
-**−64% input tokens, −36% wall time, equal correctness.** Hooks are where most of the win comes from — the static skeleton alone is only ~18% better than Serena. The adaptive per-prompt context injection pushes it to 64%. Run `briefed bench --quality --full --arms C,D,G` to reproduce.
+**−36% wall time, equal correctness, ~11% cheaper per prompt.** That ~36 seconds saved on every prompt is the win you'll feel — over a 50-prompt day, that's ~30 minutes back.
+
+The input-token count drops 64% (874K → 312K), but most of the reduction is in *cache-read* tokens which are billed at ~10% of regular input rate, so the dollar savings are more modest (~11%). Output tokens are essentially unchanged across configurations because correctness is identical — the model writes roughly the same answer at the same length.
+
+**Hooks do most of the work.** The static CLAUDE.md skeleton alone is only ~18% faster than Serena; the adaptive per-prompt context injection pushes the wall-time win to 36%. The plugin install path enables hooks by default — that's the recommended setup. Run `briefed bench --quality --full --arms C,D,G` to reproduce.
 
 ## Install — pick your path
 
