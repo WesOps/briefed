@@ -1,7 +1,7 @@
 /**
- * briefed-and-serena arm: BOTH plugins enabled, and `briefed init --deep
- * --skip-hooks` runs in each cloned repo. This is the "full stack" condition
- * — what a power user running both tools would experience.
+ * briefed-and-serena arm: BOTH plugins active, `briefed init --deep
+ * --skip-hooks` runs in each cloned repo. This is the "full stack"
+ * condition — what a power user running both tools experiences.
  *
  * The bench headline delta we care about is:
  *   briefed-and-serena  vs  serena-only
@@ -11,17 +11,10 @@
 
 import { spawnSync } from "child_process";
 import type { PolyAdapter, AdapterOptions } from "../types.js";
-import { enablePlugin, restoreBothEnabled } from "./plugins.js";
+import { writeProjectPluginConfig } from "./plugins.js";
 
 export const briefedAndSerenaAdapter: PolyAdapter = {
   name: "briefed-and-serena",
-  async beforeArm(): Promise<void> {
-    enablePlugin("briefed");
-    enablePlugin("serena");
-  },
-  async afterArm(): Promise<void> {
-    restoreBothEnabled();
-  },
   async setup(repoPath: string, opts: AdapterOptions): Promise<void> {
     const result = spawnSync(
       "node",
@@ -38,5 +31,7 @@ export const briefedAndSerenaAdapter: PolyAdapter = {
     if (result.status !== 0) {
       throw new Error(`briefed init exited with status ${result.status ?? "unknown"}`);
     }
+
+    writeProjectPluginConfig(repoPath, { briefed: true, serena: true });
   },
 };

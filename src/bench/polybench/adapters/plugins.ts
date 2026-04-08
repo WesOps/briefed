@@ -1,66 +1,70 @@
 /**
- * Helpers for toggling Claude Code plugins between bench arms, so the
- * briefed/serena/briefed+serena comparison produces cleanly-isolated results
- * instead of measuring "whatever the user happened to have installed globally."
+ * Per-cell plugin isolation via project-scope `.claude/settings.json`.
  *
- * Uses the official `claude plugin enable|disable <name> --scope user` CLI —
- * per the Claude Code docs, this is the supported mechanism for per-run
- * plugin toggling. It's idempotent and reversible.
+ * Each bench arm writes a `.claude/settings.json` into the cloned repo
+ * with an explicit `enabledPlugins` block. Project-scope `enabledPlugins`
+ * **overrides** user-scope state, so this lets us toggle briefed/serena per
+ * cell without mutating the user's `~/.claude/settings.json` at all.
  *
- * Invariant every adapter's afterArm must maintain:
- *   after the hook returns, BOTH `briefed` and `serena` are enabled at user
- *   scope. Subsequent arms' beforeArm will set them to their arm-specific
- *   state. Post-bench, the user's pre-bench environment is restored.
+ * Verified empirically — running `claude mcp list` from a repo with
  *
- * This assumes both plugins are already installed at user scope before the
- * bench begins. If one isn't installed, the enable/disable calls will fail;
- * that failure is surfaced as a beforeArm throw which aborts the arm with a
- * recorded error, rather than silently running with wrong plugin state.
+ *   { "enabledPlugins": { "briefed@briefed": false,
+ *                         "serena@claude-plugins-official": true } }
+ *
+ * shows only `plugin:serena:serena` in the active plugin list; `briefed` is
+ * cleanly filtered out even though it's still enabled at user scope. The
+ * reverse and both-enabled cases work identically.
+ *
+ * Why not `claude plugin enable|disable --scope user`?
+ *   - Mutates user's global state; mid-run crash leaves them with disabled
+ *     plugins they didn't intend
+ *   - Not cleanly idempotent (enable-already-enabled errors)
+ *   - Each toggle is a subprocess call
+ *   - Can't run two bench arms in parallel without racing on global config
+ *
+ * This approach has none of those problems. Settings get wiped with the
+ * clone dir after each cell, so there's no teardown step at all.
  */
 
-import { spawnSync } from "child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { join } from "path";
 
-type Action = "enable" | "disable";
+/** Plugin ID strings as they appear in `claude plugin list` output. */
+export const BRIEFED_PLUGIN_ID = "briefed@briefed";
+export const SERENA_PLUGIN_ID = "serena@claude-plugins-official";
 
-function runPluginAction(action: Action, pluginName: string): void {
-  const result = spawnSync(
-    "claude",
-    ["plugin", action, pluginName, "--scope", "user"],
-    {
-      stdio: "pipe",
-      encoding: "utf-8",
-      timeout: 15_000,
-      shell: process.platform === "win32",
-    },
-  );
-  if (result.error) {
-    throw new Error(
-      `claude plugin ${action} ${pluginName}: ${result.error.message}`,
-    );
-  }
-  if (result.status !== 0) {
-    const stderr = (result.stderr || "").trim().slice(0, 300);
-    const stdout = (result.stdout || "").trim().slice(0, 300);
-    throw new Error(
-      `claude plugin ${action} ${pluginName} exited ${result.status}: ${stderr || stdout || "(no output)"}`,
-    );
-  }
-}
-
-export function enablePlugin(name: string): void {
-  runPluginAction("enable", name);
-}
-
-export function disablePlugin(name: string): void {
-  runPluginAction("disable", name);
+export interface PluginState {
+  briefed: boolean;
+  serena: boolean;
 }
 
 /**
- * Restore both plugins to enabled. Called from every adapter's afterArm so
- * the pre-bench user state is preserved regardless of which arms actually
- * ran or how they exited.
+ * Write a project-scope `.claude/settings.json` into `repoPath` that
+ * explicitly enables/disables briefed and serena. Preserves any existing
+ * settings content (e.g. from `briefed init`'s hook installation) — only
+ * the `enabledPlugins` key is overwritten.
  */
-export function restoreBothEnabled(): void {
-  enablePlugin("briefed");
-  enablePlugin("serena");
+export function writeProjectPluginConfig(repoPath: string, state: PluginState): void {
+  const claudeDir = join(repoPath, ".claude");
+  if (!existsSync(claudeDir)) {
+    mkdirSync(claudeDir, { recursive: true });
+  }
+  const settingsPath = join(claudeDir, "settings.json");
+
+  let existing: Record<string, unknown> = {};
+  if (existsSync(settingsPath)) {
+    try {
+      existing = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    } catch {
+      // corrupt or non-JSON — overwrite with our own
+      existing = {};
+    }
+  }
+
+  existing.enabledPlugins = {
+    [BRIEFED_PLUGIN_ID]: state.briefed,
+    [SERENA_PLUGIN_ID]: state.serena,
+  };
+
+  writeFileSync(settingsPath, JSON.stringify(existing, null, 2) + "\n");
 }
