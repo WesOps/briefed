@@ -116,7 +116,7 @@ export function extractWithAst(filePath: string): FileExtraction | null {
     return called.size > 0 ? [...called].sort() : undefined;
   }
 
-  /** Scan a function body for throw statements and bare return null/undefined */
+  /** Scan a function body for throw statements */
   function findThrows(body: ts.Node | undefined): string[] | undefined {
     if (!body) return undefined;
     const thrown = new Set<string>();
@@ -130,21 +130,10 @@ export function extractWithAst(filePath: string): FileExtraction | null {
           thrown.add(expr.text);
         }
       }
-      // return null or return undefined at any depth in the body
-      if (ts.isReturnStatement(node) && node.expression) {
-        const expr = node.expression;
-        if (expr.kind === ts.SyntaxKind.NullKeyword) {
-          thrown.add("null");
-        } else if (ts.isIdentifier(expr) && expr.text === "undefined") {
-          thrown.add("undefined");
-        }
-      }
-      if (thrown.size < 5) {
-        ts.forEachChild(node, walkThrows);
-      }
+      ts.forEachChild(node, walkThrows);
     }
     walkThrows(body);
-    return thrown.size > 0 ? [...thrown].sort() : undefined;
+    return thrown.size > 0 ? [...thrown].sort().slice(0, 5) : undefined;
   }
 
   function visit(node: ts.Node) {

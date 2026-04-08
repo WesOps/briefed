@@ -5,6 +5,8 @@ import { createHash } from "crypto";
 import { debug } from "../utils/log.js";
 import type { FileExtraction, Symbol } from "./signatures.js";
 import type { DepGraph } from "./depgraph.js";
+import type { ComplexityScore } from "./complexity.js";
+import type { TestMapping } from "./tests.js";
 
 /**
  * Deep analysis: use `claude -p` (the user's Claude Code subscription, $0
@@ -59,6 +61,59 @@ interface DeepCache {
 const CACHE_VERSION = 1;
 const BATCH_SIZE = 8; // files per claude call
 
+interface GitSignals {
+  /** Number of commits touching this file in the last 12 months. */
+  commits: number;
+  /** Number of distinct authors with < 5% of this file's commits (diffuse ownership). */
+  minorAuthors: number;
+}
+
+/**
+ * Pull per-file git signals for blended scoring.
+ * One `git log` pass over the last 12 months. Gracefully returns empty map
+ * if the directory isn't a git repo or git isn't available.
+ */
+function getGitSignals(root: string): Map<string, GitSignals> {
+  const result = new Map<string, GitSignals>();
+  try {
+    const since = new Date();
+    since.setMonth(since.getMonth() - 12);
+    const sinceStr = since.toISOString().split("T")[0];
+
+    const out = spawnSync(
+      "git",
+      ["log", "--name-only", `--format=COMMIT:%ae`, `--since=${sinceStr}`, "--diff-filter=M"],
+      { cwd: root, encoding: "utf-8", timeout: 10_000, shell: false },
+    );
+    if (out.status !== 0 || !out.stdout) return result;
+
+    // Build file → list of author emails from commits
+    const fileAuthors = new Map<string, string[]>();
+    let currentAuthor = "";
+    for (const line of out.stdout.split("\n")) {
+      if (line.startsWith("COMMIT:")) {
+        currentAuthor = line.slice(7).trim();
+      } else if (line.trim() && currentAuthor) {
+        const rel = line.trim();
+        if (!fileAuthors.has(rel)) fileAuthors.set(rel, []);
+        fileAuthors.get(rel)!.push(currentAuthor);
+      }
+    }
+
+    for (const [file, authors] of fileAuthors) {
+      const total = authors.length;
+      const authorCounts = new Map<string, number>();
+      for (const a of authors) authorCounts.set(a, (authorCounts.get(a) || 0) + 1);
+      const threshold = total * 0.05;
+      const minorAuthors = [...authorCounts.values()].filter((c) => c < threshold).length;
+      result.set(file, { commits: total, minorAuthors });
+    }
+  } catch {
+    // not a git repo or git unavailable — skip silently
+  }
+  return result;
+}
+
 /** Dynamic annotation cap: 15% of total source files, floored at 60, capped at 200. */
 function maxFilesToAnnotate(totalFiles: number): number {
   return Math.min(Math.max(60, Math.ceil(totalFiles * 0.15)), 200);
@@ -69,6 +124,8 @@ export async function runDeepAnalysis(
   extractions: FileExtraction[],
   depGraph: DepGraph,
   root: string,
+  complexityScores: ComplexityScore[] = [],
+  testMappings: TestMapping[] = [],
 ): Promise<DeepResult> {
   const empty: DeepResult = {
     annotations: new Map(),
@@ -90,8 +147,13 @@ export async function runDeepAnalysis(
   let freshAnnotations = 0;
   let cachedAnnotations = 0;
 
+  // Build lookup maps for blended scoring
+  const complexityMap = new Map(complexityScores.map((c) => [c.file, c]));
+  const testedFiles = new Set(testMappings.map((t) => t.sourceFile));
+  const gitSignals = getGitSignals(root);
+
   // Pick the files worth annotating: must have at least one undocumented
-  // exported function/method/class, ranked by PageRank + refCount.
+  // exported function/method/class, ranked by blended importance score.
   const candidates = extractions
     .filter((e) =>
       e.symbols.some(
@@ -101,7 +163,7 @@ export async function runDeepAnalysis(
           ["function", "method", "class", "component"].includes(s.kind),
       ),
     )
-    .sort((a, b) => scoreFile(b, depGraph) - scoreFile(a, depGraph))
+    .sort((a, b) => scoreFile(b, depGraph, complexityMap, gitSignals, testedFiles) - scoreFile(a, depGraph, complexityMap, gitSignals, testedFiles))
     .slice(0, maxFilesToAnnotate(extractions.length));
 
   if (candidates.length === 0) {
@@ -343,8 +405,48 @@ export function mergeDeepAnnotations(
 // Helpers
 // ----------------------------------------------------------------------
 
-function scoreFile(ext: FileExtraction, depGraph: DepGraph): number {
-  return (depGraph.pageRank.get(ext.path) || 0) + (depGraph.refCounts.get(ext.path) || 0);
+/**
+ * Blended importance score for file selection.
+ *
+ * Signals (research-backed, ordered by evidence strength):
+ *   1. Git churn (Nagappan & Ball 2005: 89% defect-density accuracy)
+ *   2. Minor contributors / diffuse ownership (Bird et al. 2011: strongest ownership metric)
+ *   3. PageRank — architectural centrality
+ *   4. Efferent coupling / fan-out — bug propagation surface
+ *   5. Cyclomatic complexity
+ *   6. Has tests — leaf implementation bonus (tested files are meaningful)
+ *
+ * Each signal is normalized to ~0-1 before weighting so no single
+ * scale dominates.
+ */
+function scoreFile(
+  ext: FileExtraction,
+  depGraph: DepGraph,
+  complexityMap: Map<string, ComplexityScore>,
+  gitSignals: Map<string, GitSignals>,
+  testedFiles: Set<string>,
+): number {
+  const pageRank = depGraph.pageRank.get(ext.path) || 0;
+  const fanOut = depGraph.nodes.get(ext.path)?.outEdges.length || 0;
+  const complexity = complexityMap.get(ext.path)?.score || 0;
+  const git = gitSignals.get(ext.path);
+  const hasTests = testedFiles.has(ext.path) ? 1 : 0;
+
+  // Normalize to ~0-1 with soft caps
+  const pageRankNorm = Math.min(pageRank * 500, 1);       // typical range 0.0002–0.005
+  const churnNorm = Math.min((git?.commits || 0) / 30, 1); // cap at 30 commits/year
+  const minorNorm = Math.min((git?.minorAuthors || 0) / 5, 1);
+  const fanOutNorm = Math.min(fanOut / 15, 1);
+  const complexNorm = complexity / 10;
+
+  return (
+    churnNorm * 3.0 +     // highest weight: best defect predictor
+    minorNorm * 2.0 +     // diffuse ownership: strong predictor
+    pageRankNorm * 1.5 +  // centrality: architectural importance
+    fanOutNorm * 1.0 +    // efferent coupling: bug surface
+    complexNorm * 0.8 +   // cyclomatic complexity
+    hasTests * 0.5        // leaf implementation bonus
+  );
 }
 
 function safeRead(path: string): string | null {
@@ -687,5 +789,6 @@ export const __test = {
   parseBatchResponse,
   sliceRelevantLines,
   scoreFile,
+  getGitSignals,
 };
 

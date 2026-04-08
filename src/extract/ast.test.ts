@@ -195,8 +195,7 @@ export function maybeFind(id: string): User | null {
 
     const maybeFn = result!.symbols.find(s => s.name === "maybeFind");
     expect(maybeFn).toBeDefined();
-    expect(maybeFn!.throws).toBeDefined();
-    expect(maybeFn!.throws).toContain("null");
+    expect(maybeFn!.throws).toBeUndefined();
   });
 
   it("handles JSX/TSX files", () => {

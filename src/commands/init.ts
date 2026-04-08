@@ -62,7 +62,7 @@ export async function initCommand(opts: InitOptions) {
   let deepRules: Map<string, string> = new Map();
   if (opts.deep) {
     console.log("  Running deep analysis (LLM-powered behavioral descriptions)...");
-    const deepResult = await runDeepAnalysis(result.extractions, result.depGraph, root);
+    const deepResult = await runDeepAnalysis(result.extractions, result.depGraph, root, result.complexityScores, result.testMappings);
     if (deepResult.ran && deepResult.annotations.size > 0) {
       deepSystemOverview = deepResult.systemOverview;
       deepRules = buildDeepRules(result.extractions, deepResult.annotations, deepResult.directoryBoundaries);

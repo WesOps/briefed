@@ -124,15 +124,22 @@ describe("sliceRelevantLines", () => {
 });
 
 describe("scoreFile", () => {
-  it("sums PageRank and refCount", () => {
+  it("scores higher with churn and minor authors than PageRank alone", () => {
     const ext = makeExt("a.ts", []);
     const graph = {
       nodes: new Map(),
-      pageRank: new Map([["a.ts", 0.3]]),
+      pageRank: new Map([["a.ts", 0.002]]),
       refCounts: new Map([["a.ts", 5]]),
       symbolRefs: new Map(),
     };
-    expect(scoreFile(ext, graph)).toBeCloseTo(5.3);
+    const emptyComplexity = new Map();
+    const emptyGit = new Map();
+    const noTests = new Set<string>();
+    const gitWithChurn = new Map([["a.ts", { commits: 30, minorAuthors: 5 }]]);
+
+    const baseScore = scoreFile(ext, graph, emptyComplexity, emptyGit, noTests);
+    const churnScore = scoreFile(ext, graph, emptyComplexity, gitWithChurn, noTests);
+    expect(churnScore).toBeGreaterThan(baseScore);
   });
 
   it("handles missing entries as zero", () => {
@@ -143,7 +150,7 @@ describe("scoreFile", () => {
       refCounts: new Map(),
       symbolRefs: new Map(),
     };
-    expect(scoreFile(ext, graph)).toBe(0);
+    expect(scoreFile(ext, graph, new Map(), new Map(), new Set())).toBe(0);
   });
 });
 
