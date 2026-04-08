@@ -31,6 +31,15 @@ export interface ArmConfig {
   label: string;
   serena: boolean;
   briefed: "none" | "static" | "deep";
+  /**
+   * Whether briefed installs its UserPromptSubmit + SessionStart hooks for
+   * this arm. Only meaningful when briefed != "none". When false, briefed
+   * init runs with --skip-hooks (the bench's historical default for clean
+   * static-vs-static comparison). When true, the full briefed install runs
+   * and the model gets per-prompt adaptive context injection on top of the
+   * static skeleton.
+   */
+  hooks: boolean;
 }
 
 export const ARM_LABELS: Record<string, string> = {
@@ -40,18 +49,23 @@ export const ARM_LABELS: Record<string, string> = {
   D: "serena + briefed-deep",
   E: "no-serena + briefed-static",
   F: "serena + briefed-static",
+  G: "serena + briefed-deep + hooks",
 };
 
 const DEFAULT_MATRIX: ArmConfig[] = [
-  { label: "A", serena: false, briefed: "none" },
-  { label: "B", serena: false, briefed: "deep" },
-  { label: "C", serena: true, briefed: "none" },
-  { label: "D", serena: true, briefed: "deep" },
+  { label: "A", serena: false, briefed: "none", hooks: false },
+  { label: "B", serena: false, briefed: "deep", hooks: false },
+  { label: "C", serena: true, briefed: "none", hooks: false },
+  { label: "D", serena: true, briefed: "deep", hooks: false },
 ];
 
 const FULL_EXTRA: ArmConfig[] = [
-  { label: "E", serena: false, briefed: "static" },
-  { label: "F", serena: true, briefed: "static" },
+  { label: "E", serena: false, briefed: "static", hooks: false },
+  { label: "F", serena: true, briefed: "static", hooks: false },
+  // Arm G is the "do hooks earn their keep on top of the static skeleton?"
+  // measurement. Only differs from D by `hooks: true`. Pair with D in any
+  // bench run to get the G-vs-D delta directly.
+  { label: "G", serena: true, briefed: "deep", hooks: true },
 ];
 
 export function enumerateArms(opts: QualityOptions): ArmConfig[] {
@@ -151,6 +165,13 @@ export async function runQualityBench(opts: QualityOptions): Promise<QualityCell
     }
   }
 
+  // Cost optimization: persist briefed's deep-cache.json across arms.
+  // Without this, every deep arm pays the full ~$1-2 + ~150s LLM annotation
+  // cost from scratch. With this, the first deep arm in a run pays full price
+  // and every subsequent deep arm reads the cache and short-circuits — the
+  // corpus source is the same across arms, so the cache is valid.
+  let cachedDeepCache: string | null = null;
+
   try {
     for (const arm of arms) {
       console.log(`\n  Arm ${arm.label}: ${ARM_LABELS[arm.label]}`);
@@ -158,7 +179,17 @@ export async function runQualityBench(opts: QualityOptions): Promise<QualityCell
 
       if (!opts.reportOnly) {
         try {
-          applyArmState(corpusPath, arm, claudePath);
+          applyArmState(corpusPath, arm, claudePath, cachedDeepCache);
+          // After a successful deep arm setup, harvest the fresh deep cache
+          // for the next deep arm to reuse.
+          if (arm.briefed === "deep") {
+            const freshCachePath = join(corpusPath, ".briefed", "deep-cache.json");
+            if (existsSync(freshCachePath)) {
+              try {
+                cachedDeepCache = readFileSync(freshCachePath, "utf-8");
+              } catch { /* keep previous */ }
+            }
+          }
         } catch (e) {
           const msg = (e as Error).message;
           console.error(`    arm setup failed: ${msg.slice(0, 200)}`);
@@ -267,8 +298,14 @@ export async function runQualityBench(opts: QualityOptions): Promise<QualityCell
   return results;
 }
 
-function applyArmState(corpusPath: string, arm: ArmConfig, claudePath: string): void {
-  // 1. Clean slate: strip any briefed artifacts
+function applyArmState(
+  corpusPath: string,
+  arm: ArmConfig,
+  claudePath: string,
+  cachedDeepCache: string | null,
+): void {
+  // 1. Clean slate: strip any briefed artifacts (this wipes .briefed/ entirely,
+  //    including the deep-cache.json that briefed init --deep maintains).
   stripBriefedPreservingMcp(corpusPath);
 
   // 2. Toggle serena presence in .claude/settings.json
@@ -276,8 +313,25 @@ function applyArmState(corpusPath: string, arm: ArmConfig, claudePath: string): 
 
   // 3. Install briefed if this arm requires it
   if (arm.briefed !== "none") {
+    // Cost optimization: restore the deep cache from the previous deep arm
+    // (if any) BEFORE briefed init runs, so the LLM annotation step short-
+    // circuits on cache hits and only re-annotates files whose source hash
+    // changed. Without this, every deep arm pays the full ~$1-2 + ~150s
+    // annotation cost from scratch. The corpus is the same across arms in
+    // a single bench run, so the cache from arm D is valid for arm G/F/etc.
+    if (arm.briefed === "deep" && cachedDeepCache) {
+      const briefedDir = join(corpusPath, ".briefed");
+      mkdirSync(briefedDir, { recursive: true });
+      writeFileSync(join(briefedDir, "deep-cache.json"), cachedDeepCache);
+    }
+
     const briefedCli = join(import.meta.dirname, "..", "cli.js");
-    const flags = ["init", "--repo", corpusPath, "--skip-hooks"];
+    const flags = ["init", "--repo", corpusPath];
+    // arm.hooks controls whether briefed installs its UserPromptSubmit +
+    // SessionStart hooks for this arm. Pass --skip-hooks for arms that
+    // measure the static skeleton in isolation; omit it for arms that
+    // measure the full briefed install (e.g. arm G).
+    if (!arm.hooks) flags.push("--skip-hooks");
     if (arm.briefed === "deep") flags.push("--deep");
     const result = spawnSync("node", [briefedCli, ...flags], {
       stdio: "inherit",
