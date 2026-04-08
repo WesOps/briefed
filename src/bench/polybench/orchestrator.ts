@@ -161,6 +161,28 @@ export async function runPolybench(opts: PolyBenchOptions): Promise<ArmReport[]>
     const results: CellResult[] = [];
 
     console.log(`\n  Arm: ${arm}`);
+
+    // Per-arm setup (e.g. toggle Claude Code plugins for isolation). If this
+    // throws, skip the arm entirely — running it with the wrong plugin state
+    // would produce a misleadingly-labeled result.
+    if (adapter.beforeArm) {
+      try {
+        await adapter.beforeArm();
+      } catch (e) {
+        console.log(`    beforeArm failed: ${(e as Error).message.slice(0, 200)}`);
+        console.log(`    skipping arm ${arm}`);
+        return {
+          arm,
+          results: [],
+          totalCostUsd: 0,
+          totalElapsedSec: 0,
+          passCount: null,
+          failCount: null,
+        };
+      }
+    }
+
+    try {
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
       const cellKey = `${arm}:${task.instanceId}`;
@@ -216,6 +238,19 @@ export async function runPolybench(opts: PolyBenchOptions): Promise<ArmReport[]>
 
       if (i < tasks.length - 1) {
         await sleep(opts.delayBetweenTasksMs);
+      }
+    }
+    } finally {
+      // Per-arm teardown MUST run even on error / cost-cap exit so the next
+      // arm (and the user's post-bench environment) has clean plugin state.
+      // Teardown failures are logged but not re-thrown — they can't undo
+      // successful results and re-throwing would mask the original error.
+      if (adapter.afterArm) {
+        try {
+          await adapter.afterArm();
+        } catch (e) {
+          console.log(`    afterArm failed (non-fatal): ${(e as Error).message.slice(0, 200)}`);
+        }
       }
     }
 

@@ -86,6 +86,15 @@ const REQUIRED_COLUMNS = [
  * Load PolyTask rows from a SWE-PolyBench CSV, filtered by language, limited
  * to the first `n` rows after filtering (if set). Throws if the file is
  * missing or the required columns aren't present.
+ *
+ * `language` accepts:
+ *   - a single language: `"TypeScript"` (exact match)
+ *   - comma-separated list: `"TypeScript,JavaScript"` (match any)
+ *   - `"any"` (case-insensitive): disable the filter entirely
+ *
+ * briefed itself extracts both .ts and .js, so combining the two for a
+ * TS/JS bench run is common — SWE-PolyBench labels some Node projects as
+ * JavaScript even when they have heavy TS usage in adjacent repos.
  */
 export function loadTasks(csvPath: string, language: string, n?: number): PolyTask[] {
   if (!existsSync(csvPath)) {
@@ -107,12 +116,17 @@ export function loadTasks(csvPath: string, language: string, n?: number): PolyTa
     colIdx[col] = idx;
   }
 
+  const acceptAll = language.trim().toLowerCase() === "any";
+  const acceptedLanguages = acceptAll
+    ? null
+    : new Set(language.split(",").map((l) => l.trim()).filter(Boolean));
+
   const tasks: PolyTask[] = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (row.length < header.length) continue; // skip malformed row
     const taskLanguage = row[colIdx.language] ?? "";
-    if (taskLanguage !== language) continue;
+    if (acceptedLanguages && !acceptedLanguages.has(taskLanguage)) continue;
     tasks.push({
       instanceId: row[colIdx.instance_id] ?? "",
       repo: row[colIdx.repo] ?? "",

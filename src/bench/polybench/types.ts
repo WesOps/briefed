@@ -37,6 +37,20 @@ export interface PolyAdapter {
   /** Used on the CLI as `--arms <name>` and as the predictions file suffix. */
   name: string;
   /**
+   * Optional per-arm setup, called ONCE before the arm's cell loop begins.
+   * Intended for expensive arm-wide configuration like toggling Claude Code
+   * plugins via `claude plugin enable/disable`. If this throws, the arm is
+   * skipped entirely with the error recorded.
+   */
+  beforeArm?(): Promise<void>;
+  /**
+   * Optional per-arm teardown, called in a `finally` after the arm's cell loop
+   * (even on error or cost-cap exit). MUST restore any state beforeArm mutated,
+   * especially plugin enable/disable state, so subsequent arms and the user's
+   * post-bench environment are clean. Failures here are logged but not thrown.
+   */
+  afterArm?(): Promise<void>;
+  /**
    * Run the tool's init step in a freshly-cloned repo at the task's baseCommit.
    * Must throw on failure so the orchestrator can record the error and continue.
    */
