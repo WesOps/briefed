@@ -127,7 +127,7 @@ export function runExtractionPipeline(
   const complexityScores: ComplexityScore[] = [];
   for (const ext of extractions) {
     try {
-      const score = computeComplexity(ext, depGraph);
+      const score = computeComplexity(ext, depGraph, root);
       complexityScores.push(score);
     } catch (e) {
       debug(`complexity scoring failed for ${ext.path}: ${(e as Error).message}`);

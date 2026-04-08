@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import { join, isAbsolute } from "path";
 import type { FileExtraction } from "./signatures.js";
 import type { DepGraph } from "./depgraph.js";
 
@@ -18,9 +19,13 @@ export interface ComplexityScore {
  */
 export function computeComplexity(
   extraction: FileExtraction,
-  depGraph: DepGraph
+  depGraph: DepGraph,
+  root = "",
 ): ComplexityScore {
-  const content = readFileSync(extraction.path, "utf-8");
+  // extraction.path may be relative (set by pipeline after extraction).
+  // Resolve against root so --repo /other/path doesn't silently fail.
+  const fullPath = isAbsolute(extraction.path) ? extraction.path : join(root, extraction.path);
+  const content = readFileSync(fullPath, "utf-8");
 
   const fanOut = extraction.imports.filter((i) => i.isRelative).length;
   const node = depGraph.nodes.get(

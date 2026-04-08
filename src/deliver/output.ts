@@ -24,7 +24,6 @@ export function writeOutputs(
   root: string,
   result: ExtractionResult,
   enrichedSkeleton: string,
-  convText: string,
   opts: WriteOutputsOptions
 ): OutputSummary {
   const summary: OutputSummary = {
@@ -76,10 +75,10 @@ export function writeOutputs(
 
   // Cross-tool output
   console.log("  Writing cross-tool context...");
-  writeCursorRules(root, enrichedSkeleton, convText);
-  writeAgentsMd(root, enrichedSkeleton, convText);
-  writeCopilotInstructions(root, enrichedSkeleton, convText);
-  writeCodexMd(root, enrichedSkeleton, convText);
+  writeCursorRules(root, enrichedSkeleton);
+  writeAgentsMd(root, enrichedSkeleton);
+  writeCopilotInstructions(root, enrichedSkeleton);
+  writeCodexMd(root, enrichedSkeleton);
 
   // Git hook for auto-updates
   summary.gitHookInstalled = installGitHook(root);

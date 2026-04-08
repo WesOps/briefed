@@ -119,7 +119,7 @@ export async function initCommand(opts: InitOptions) {
   }
 
   // Step 7: Write all outputs
-  const outputSummary = writeOutputs(root, result, enrichedSkeleton, convText, {
+  const outputSummary = writeOutputs(root, result, enrichedSkeleton, {
     skipHooks: opts.skipHooks,
   });
 
