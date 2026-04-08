@@ -296,13 +296,38 @@ export function buildDeepRules(
   extractions: FileExtraction[],
   annotations: Map<string, Map<string, string>>,
   directoryBoundaries: Map<string, string> = new Map(),
+  testMappings: TestMapping[] = [],
+  depGraph?: DepGraph,
 ): Map<string, string> {
   const rules = new Map<string, string>();
+
+  // Map source file path → test names
+  const testNamesByFile = new Map<string, string[]>();
+  for (const tm of testMappings) {
+    if (tm.testNames.length > 0) {
+      testNamesByFile.set(tm.sourceFile, tm.testNames.slice(0, 5));
+    }
+  }
+
+  // Map "file#symbolName" → list of caller file paths (top 3)
+  const callersBySymbol = new Map<string, string[]>();
+  if (depGraph) {
+    for (const [key, callers] of depGraph.symbolRefs) {
+      callersBySymbol.set(key, callers.slice(0, 3));
+    }
+  }
 
   // Group annotated files by directory
   type FileEntry = {
     file: string;
-    symbols: Array<{ name: string; sig: string; desc: string }>;
+    symbols: Array<{
+      name: string;
+      sig: string;
+      desc: string;
+      calls?: string[];
+      throws?: string[];
+      callers?: string[];
+    }>;
   };
   const byDir = new Map<string, FileEntry[]>();
 
@@ -317,7 +342,17 @@ export function buildDeepRules(
     for (const sym of ext.symbols) {
       const desc = fileAnns.get(sym.name);
       if (desc) {
-        syms.push({ name: sym.name, sig: sym.signature, desc });
+        // Callers: look up "filepath#symbolName" in depGraph.symbolRefs
+        const callerKey = `${ext.path}#${sym.name}`;
+        const callers = callersBySymbol.get(callerKey);
+        syms.push({
+          name: sym.name,
+          sig: sym.signature,
+          desc,
+          calls: sym.calls?.slice(0, 5),
+          throws: sym.throws,
+          callers: callers?.map(c => c.split("/").pop() || c),
+        });
       }
     }
     if (syms.length > 0) {
@@ -347,6 +382,19 @@ export function buildDeepRules(
       lines.push(`## ${fname}`);
       for (const sym of entry.symbols) {
         lines.push(`- **${sym.name}**: ${sym.desc}`);
+        if (sym.calls && sym.calls.length > 0) {
+          lines.push(`  - calls: ${sym.calls.join(", ")}`);
+        }
+        if (sym.throws && sym.throws.length > 0) {
+          lines.push(`  - throws: ${sym.throws.join(", ")}`);
+        }
+        if (sym.callers && sym.callers.length > 0) {
+          lines.push(`  - called by: ${sym.callers.join(", ")}`);
+        }
+      }
+      const testNames = testNamesByFile.get(entry.file);
+      if (testNames && testNames.length > 0) {
+        lines.push(`  Tests: ${testNames.map(n => `"${n}"`).join(", ")}`);
       }
       lines.push("");
     }
