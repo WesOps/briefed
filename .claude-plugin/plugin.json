@@ -1,0 +1,19 @@
+{
+  "name": "briefed",
+  "description": "Adaptive Context Engine — pre-extracts codebase structure (symbols, schemas, routes, env vars, deep LLM annotations) into a CLAUDE.md skeleton plus per-prompt adaptive context injection. Cuts orientation tokens 30-70% with no impact on correctness.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Wesley Campbell"
+  },
+  "homepage": "https://github.com/WesOps/briefed",
+  "repository": "https://github.com/WesOps/briefed",
+  "license": "MIT",
+  "keywords": [
+    "context",
+    "codebase",
+    "claude",
+    "mcp",
+    "skeleton",
+    "extraction"
+  ]
+}

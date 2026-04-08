@@ -4,8 +4,35 @@
 
 briefed scans your repository and produces a layered context snapshot that Claude Code, Cursor, Copilot, and any tool reading `AGENTS.md` load automatically — so the AI starts oriented instead of grepping around.
 
+## Headline (v1.0.0, n=4 paired bench)
+
+On a 4-task paired comparison against [epicweb-dev/epic-stack](https://github.com/epicweb-dev/epic-stack) at a pinned commit:
+
+| Configuration | Wall time (mean) | Correctness | $/task | Input tokens |
+|---|---|---|---|---|
+| Serena alone | 100s | 5/5 | $0.43 | 874K |
+| **Serena + briefed (with hooks)** | **64s** | **5/5** | **$0.38** | **312K** |
+
+**−36% wall time, equal correctness, ~11% cheaper per prompt.** That ~36 seconds saved on every prompt is the win you'll feel — over a 50-prompt day, that's ~30 minutes back.
+
+The input-token count drops 64% (874K → 312K), but most of the reduction is in *cache-read* tokens which are billed at ~10% of regular input rate, so the dollar savings are more modest (~11%). Output tokens are essentially unchanged across configurations because correctness is identical — the model writes roughly the same answer at the same length.
+
+**Hooks do most of the work.** The static CLAUDE.md skeleton alone is only ~18% faster than Serena; the adaptive per-prompt context injection pushes the wall-time win to 36%. The plugin install path enables hooks by default — that's the recommended setup. Run `briefed bench --quality --full --arms C,D,G` to reproduce.
+
+## Install — pick your path
+
+**Claude Code users (recommended):** install as a Claude Code plugin so the MCP server actually loads and the hooks register globally.
+
 ```bash
-npx briefed init
+claude plugin marketplace add WesOps/briefed
+claude plugin install briefed
+```
+
+**Cursor / Copilot / Codex / other tools:** install via npm and run the CLI per-project. You get the static skeleton + cross-tool output but not the MCP server (which currently only loads via the Claude Code plugin path).
+
+```bash
+npm install -g briefed
+briefed init
 ```
 
 That's it. briefed installs a git post-commit hook and re-indexes after every commit.

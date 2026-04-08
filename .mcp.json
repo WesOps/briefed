@@ -1,0 +1,10 @@
+{
+  "briefed": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "briefed@latest",
+      "mcp"
+    ]
+  }
+}
