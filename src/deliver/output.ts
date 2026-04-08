@@ -1,6 +1,6 @@
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { updateClaudeMd, saveSkeletonFile } from "./claudemd.js";
+import { updateClaudeMd, saveSkeletonFile, generateBreadcrumb } from "./claudemd.js";
 import { installHooks, generateHookScripts } from "./hooks.js";
 import { writeCursorRules, writeAgentsMd, writeCopilotInstructions, writeCodexMd } from "./cross-tool.js";
 import { installGitHook } from "./git-hook.js";
@@ -47,10 +47,13 @@ export function writeOutputs(
     )
   );
 
-  // Write skeleton to CLAUDE.md
-  console.log("  Writing skeleton to CLAUDE.md...");
-  updateClaudeMd(root, enrichedSkeleton);
+  // Write the full skeleton to .briefed/skeleton.md — it's the source of
+  // truth that the SessionStart hook reads and that users can open directly.
+  // CLAUDE.md gets a thin breadcrumb pointing at it.
   saveSkeletonFile(root, enrichedSkeleton);
+
+  console.log("  Writing breadcrumb to CLAUDE.md (full skeleton at .briefed/skeleton.md)...");
+  updateClaudeMd(root, generateBreadcrumb());
 
   // NOTE: briefed used to auto-register an MCP server entry in
   // .claude/settings.json here. The audit for v0.4.0 confirmed that
