@@ -116,6 +116,37 @@ export function extractWithAst(filePath: string): FileExtraction | null {
     return called.size > 0 ? [...called].sort() : undefined;
   }
 
+  /** Scan a function body for throw statements and bare return null/undefined */
+  function findThrows(body: ts.Node | undefined): string[] | undefined {
+    if (!body) return undefined;
+    const thrown = new Set<string>();
+    function walkThrows(node: ts.Node) {
+      // throw new Foo(...) → "Foo", throw fooExpr → identifier name
+      if (ts.isThrowStatement(node) && node.expression) {
+        const expr = node.expression;
+        if (ts.isNewExpression(expr) && ts.isIdentifier(expr.expression)) {
+          thrown.add(expr.expression.text);
+        } else if (ts.isIdentifier(expr)) {
+          thrown.add(expr.text);
+        }
+      }
+      // return null or return undefined at any depth in the body
+      if (ts.isReturnStatement(node) && node.expression) {
+        const expr = node.expression;
+        if (expr.kind === ts.SyntaxKind.NullKeyword) {
+          thrown.add("null");
+        } else if (ts.isIdentifier(expr) && expr.text === "undefined") {
+          thrown.add("undefined");
+        }
+      }
+      if (thrown.size < 5) {
+        ts.forEachChild(node, walkThrows);
+      }
+    }
+    walkThrows(body);
+    return thrown.size > 0 ? [...thrown].sort() : undefined;
+  }
+
   function visit(node: ts.Node) {
     // Import declarations
     if (ts.isImportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
@@ -164,6 +195,7 @@ export function extractWithAst(filePath: string): FileExtraction | null {
         line: getLineNumber(node),
         confidence: "ast",
         calls: findCalls(node.body),
+        throws: findThrows(node.body),
       });
       return;
     }
@@ -208,6 +240,7 @@ export function extractWithAst(filePath: string): FileExtraction | null {
             line: getLineNumber(member),
             confidence: "ast",
             calls: ts.isMethodDeclaration(member) ? findCalls(member.body) : undefined,
+            throws: ts.isMethodDeclaration(member) ? findThrows(member.body) : undefined,
           });
         }
       }
@@ -296,6 +329,7 @@ export function extractWithAst(filePath: string): FileExtraction | null {
             line: getLineNumber(node),
             confidence: "ast",
             calls: findCalls(fn.body),
+            throws: findThrows(fn.body),
           });
         } else {
           // Non-function export (constant, config object, etc.)

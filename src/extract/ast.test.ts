@@ -171,6 +171,34 @@ export function createInvoice(projectId: string): Promise<Invoice> {
     expect(fn!.description).toBe("Creates a new invoice for a project.");
   });
 
+  it("populates throws[] for functions with throw statements", () => {
+    const result = writeAndExtract("test.ts", `
+export function loadConfig(path: string): Config {
+  if (!path) throw new ConfigParseError("path required");
+  if (path === "bad") throw new ValidationError("invalid");
+  return readConfig(path);
+}
+
+export function maybeFind(id: string): User | null {
+  if (!id) return null;
+  return db.find(id) ?? undefined;
+}
+    `);
+    cleanup();
+    expect(result).not.toBeNull();
+
+    const loadFn = result!.symbols.find(s => s.name === "loadConfig");
+    expect(loadFn).toBeDefined();
+    expect(loadFn!.throws).toBeDefined();
+    expect(loadFn!.throws).toContain("ConfigParseError");
+    expect(loadFn!.throws).toContain("ValidationError");
+
+    const maybeFn = result!.symbols.find(s => s.name === "maybeFind");
+    expect(maybeFn).toBeDefined();
+    expect(maybeFn!.throws).toBeDefined();
+    expect(maybeFn!.throws).toContain("null");
+  });
+
   it("handles JSX/TSX files", () => {
     const result = writeAndExtract("test.tsx", `
 import React from "react";

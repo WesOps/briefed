@@ -15,6 +15,7 @@ export interface Symbol {
   line: number;
   confidence?: "ast" | "regex";  // how the symbol was extracted (default: "regex")
   calls?: string[];      // imported symbols this function calls (AST-only, function-level call graph)
+  throws?: string[];     // error types thrown or returned (AST-only)
 }
 
 export type SymbolKind =
