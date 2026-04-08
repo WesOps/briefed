@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "briefed",
+  "description": "briefed: adaptive context engine for AI coding tools. Pre-extracts codebase structure into CLAUDE.md plus per-prompt adaptive context injection.",
+  "owner": {
+    "name": "Wesley Campbell"
+  },
+  "plugins": [
+    {
+      "name": "briefed",
+      "description": "Pre-extracts codebase structure (symbols, schemas, routes, env vars, deep LLM annotations) into a CLAUDE.md skeleton plus per-prompt adaptive context injection. Cuts orientation tokens 30-70% with no impact on correctness.",
+      "category": "development",
+      "source": "./",
+      "homepage": "https://github.com/WesOps/briefed",
+      "author": {
+        "name": "Wesley Campbell"
+      }
+    }
+  ]
+}
