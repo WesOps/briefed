@@ -65,7 +65,7 @@ export async function initCommand(opts: InitOptions) {
     const deepResult = await runDeepAnalysis(result.extractions, result.depGraph, root);
     if (deepResult.ran && deepResult.annotations.size > 0) {
       deepSystemOverview = deepResult.systemOverview;
-      deepRules = buildDeepRules(result.extractions, deepResult.annotations);
+      deepRules = buildDeepRules(result.extractions, deepResult.annotations, deepResult.directoryBoundaries);
     }
   }
 

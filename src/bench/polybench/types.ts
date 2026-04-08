@@ -102,6 +102,8 @@ export interface CellResult {
   elapsedSec: number;
   costUsd: number;
   numTurns: number | "unknown";
+  inputTokens: number;
+  outputTokens: number;
   /** Set when the cell errored mid-run (setup/claude/diff failure). */
   error: string | null;
   /** True if this cell was loaded from an existing predictions file (resume). */

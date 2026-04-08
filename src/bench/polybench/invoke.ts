@@ -17,6 +17,8 @@ export interface ClaudeRunResult {
   elapsedSec: number;
   costUsd: number;
   numTurns: number | "unknown";
+  inputTokens: number;
+  outputTokens: number;
   stdout: string;
   exitCode: number | null;
 }
@@ -105,6 +107,8 @@ export function runClaudeOnTask(
   const stdout = result.stdout || "";
   let costUsd = 0;
   let numTurns: number | "unknown" = "unknown";
+  let inputTokens = 0;
+  let outputTokens = 0;
 
   try {
     const parsed = JSON.parse(stdout) as Record<string, unknown>;
@@ -116,6 +120,13 @@ export function runClaudeOnTask(
     if (typeof turns === "number" && Number.isFinite(turns)) {
       numTurns = turns;
     }
+    const usage = parsed.usage as Record<string, unknown> | undefined;
+    if (usage) {
+      const inp = usage.input_tokens;
+      const out = usage.output_tokens;
+      if (typeof inp === "number" && Number.isFinite(inp)) inputTokens = inp;
+      if (typeof out === "number" && Number.isFinite(out)) outputTokens = out;
+    }
   } catch {
     // claude -p output wasn't a clean JSON envelope — leave defaults.
   }
@@ -124,6 +135,8 @@ export function runClaudeOnTask(
     elapsedSec,
     costUsd,
     numTurns,
+    inputTokens,
+    outputTokens,
     stdout,
     exitCode: result.status,
   };

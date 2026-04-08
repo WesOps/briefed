@@ -28,16 +28,18 @@ export function generatePolyReport(reports: ArmReport[]): string {
   // Summary
   lines.push("## Summary");
   lines.push("");
-  lines.push("| Arm | Tasks | Cost | Time | Pass rate |");
-  lines.push("|---|---|---|---|---|");
+  lines.push("| Arm | Tasks | Cost | Input tok | Output tok | Time | Pass rate |");
+  lines.push("|---|---|---|---|---|---|---|");
   for (const r of reports) {
     const scored = r.results.filter((c) => !c.error).length;
     const passRate =
       r.passCount === null
         ? "—"
         : `${r.passCount}/${r.passCount + (r.failCount ?? 0)}`;
+    const totalInput = r.results.reduce((sum, c) => sum + c.inputTokens, 0);
+    const totalOutput = r.results.reduce((sum, c) => sum + c.outputTokens, 0);
     lines.push(
-      `| \`${r.arm}\` | ${scored} | $${r.totalCostUsd.toFixed(2)} | ${r.totalElapsedSec.toFixed(0)}s | ${passRate} |`,
+      `| \`${r.arm}\` | ${scored} | $${r.totalCostUsd.toFixed(2)} | ${totalInput.toLocaleString()} | ${totalOutput.toLocaleString()} | ${r.totalElapsedSec.toFixed(0)}s | ${passRate} |`,
     );
   }
   lines.push("");

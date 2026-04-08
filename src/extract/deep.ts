@@ -28,6 +28,12 @@ export interface DeepResult {
   annotations: Map<string, Map<string, string>>;
   /** Optional system overview paragraph for the top of CLAUDE.md. */
   systemOverview: string | null;
+  /**
+   * directory path → one-sentence boundary description.
+   * e.g. "Handles runtime execution of compiled output. For compilation
+   * bugs, look in src/compiler/ instead."
+   */
+  directoryBoundaries: Map<string, string>;
   /** How many symbols were freshly annotated (vs served from cache). */
   freshAnnotations: number;
   /** How many symbols were served from the cache. */
@@ -47,11 +53,16 @@ interface DeepCache {
   version: 1;
   files: Record<string, DeepCacheEntry>;
   overview: { hash: string; text: string } | null;
+  boundaries: { hash: string; dirs: Record<string, string> } | null;
 }
 
 const CACHE_VERSION = 1;
-const MAX_FILES_TO_ANNOTATE = 60; // top-N by importance
 const BATCH_SIZE = 8; // files per claude call
+
+/** Dynamic annotation cap: 15% of total source files, floored at 60, capped at 200. */
+function maxFilesToAnnotate(totalFiles: number): number {
+  return Math.min(Math.max(60, Math.ceil(totalFiles * 0.15)), 200);
+}
 const CLAUDE_TIMEOUT_MS = 120_000;
 
 export async function runDeepAnalysis(
@@ -62,6 +73,7 @@ export async function runDeepAnalysis(
   const empty: DeepResult = {
     annotations: new Map(),
     systemOverview: null,
+    directoryBoundaries: new Map(),
     freshAnnotations: 0,
     cachedAnnotations: 0,
     ran: false,
@@ -90,7 +102,7 @@ export async function runDeepAnalysis(
       ),
     )
     .sort((a, b) => scoreFile(b, depGraph) - scoreFile(a, depGraph))
-    .slice(0, MAX_FILES_TO_ANNOTATE);
+    .slice(0, maxFilesToAnnotate(extractions.length));
 
   if (candidates.length === 0) {
     console.log("  [deep] nothing to annotate (all exported symbols already documented)");
@@ -177,6 +189,23 @@ export async function runDeepAnalysis(
     }
   }
 
+  // Directory boundary descriptions — one haiku call, cached by dir list hash
+  const boundariesHash = hashString(
+    [...annotations.keys()].sort().join("\n"),
+  );
+  let directoryBoundaries = new Map<string, string>();
+  if (cache.boundaries && cache.boundaries.hash === boundariesHash) {
+    directoryBoundaries = new Map(Object.entries(cache.boundaries.dirs));
+  } else {
+    directoryBoundaries = await generateDirectoryBoundaries(claudePath, annotations, root);
+    if (directoryBoundaries.size > 0) {
+      cache.boundaries = {
+        hash: boundariesHash,
+        dirs: Object.fromEntries(directoryBoundaries),
+      };
+    }
+  }
+
   saveCache(root, cache);
 
   console.log(
@@ -186,6 +215,7 @@ export async function runDeepAnalysis(
   return {
     annotations,
     systemOverview,
+    directoryBoundaries,
     freshAnnotations,
     cachedAnnotations,
     ran: true,
@@ -203,6 +233,7 @@ export async function runDeepAnalysis(
 export function buildDeepRules(
   extractions: FileExtraction[],
   annotations: Map<string, Map<string, string>>,
+  directoryBoundaries: Map<string, string> = new Map(),
 ): Map<string, string> {
   const rules = new Map<string, string>();
 
@@ -244,6 +275,11 @@ export function buildDeepRules(
     lines.push("");
     lines.push(`# ${dir}/ — behavioral context`);
     lines.push("");
+    const boundary = directoryBoundaries.get(dir);
+    if (boundary) {
+      lines.push(`> ${boundary}`);
+      lines.push("");
+    }
     for (const entry of files) {
       const fname = entry.file.split("/").pop() || entry.file;
       lines.push(`## ${fname}`);
@@ -254,6 +290,24 @@ export function buildDeepRules(
     }
 
     rules.set(fileName, lines.join("\n"));
+  }
+
+  // Global architectural index — always loaded, lists every annotated directory
+  // with its boundary description. Helps the model route issues to the right place
+  // before it even opens a file.
+  if (directoryBoundaries.size >= 2) {
+    const indexLines: string[] = [];
+    indexLines.push("# Codebase architecture — directory boundaries");
+    indexLines.push("");
+    indexLines.push("Use this map to route bug fixes and features to the correct directory.");
+    indexLines.push("When an issue description mentions a concept, find the directory responsible for it here.");
+    indexLines.push("");
+    for (const [dir, desc] of [...directoryBoundaries.entries()].sort()) {
+      indexLines.push(`## ${dir}/`);
+      indexLines.push(desc);
+      indexLines.push("");
+    }
+    rules.set("briefed-deep-arch-index.md", indexLines.join("\n"));
   }
 
   return rules;
@@ -509,19 +563,86 @@ ${sections.join("\n\n")}`;
     .trim();
 }
 
+async function generateDirectoryBoundaries(
+  claudePath: string,
+  annotations: Map<string, Map<string, string>>,
+  root: string,
+): Promise<Map<string, string>> {
+  // Group annotated symbols by directory
+  const byDir = new Map<string, string[]>();
+  for (const [filePath, fileAnns] of annotations) {
+    const dir = dirname(filePath);
+    if (!byDir.has(dir)) byDir.set(dir, []);
+    for (const [name, desc] of fileAnns) {
+      byDir.get(dir)!.push(`${name}: ${desc}`);
+    }
+  }
+
+  // Only generate boundaries when there are multiple directories to compare
+  if (byDir.size < 2) return new Map();
+
+  const sections: string[] = [];
+  for (const [dir, symbols] of byDir) {
+    const top = symbols.slice(0, 4).join("; ");
+    sections.push(`${dir}/: ${top}`);
+  }
+
+  const prompt = `Given these codebase directories and their key behaviors, for EACH directory write ONE sentence describing:
+- What this directory is responsible for
+- What it is NOT responsible for (and where those concerns live instead)
+
+Focus on architectural boundaries that would help a developer know WHERE to look when fixing a bug.
+
+Respond ONLY with a JSON object mapping directory path to its boundary sentence. Example:
+{"src/runtime": "Handles execution of compiled output in the browser — NOT compilation logic; for compiler bugs see src/compiler.", "src/compiler": "Transforms source files into executable JS — NOT runtime behavior; for execution bugs see src/runtime."}
+
+DIRECTORIES:
+${sections.join("\n")}`;
+
+  const raw = runClaudeJson(claudePath, prompt, root, "haiku");
+  if (!raw) return new Map();
+
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/, "")
+    .trim();
+
+  try {
+    const obj = JSON.parse(cleaned) as Record<string, unknown>;
+    const result = new Map<string, string>();
+    for (const [dir, desc] of Object.entries(obj)) {
+      if (typeof desc === "string") result.set(dir, desc);
+    }
+    return result;
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) return new Map();
+    try {
+      const obj = JSON.parse(match[0]) as Record<string, unknown>;
+      const result = new Map<string, string>();
+      for (const [dir, desc] of Object.entries(obj)) {
+        if (typeof desc === "string") result.set(dir, desc);
+      }
+      return result;
+    } catch {
+      return new Map();
+    }
+  }
+}
+
 function loadCache(root: string): DeepCache {
   const cachePath = join(root, ".briefed", "deep-cache.json");
   if (!existsSync(cachePath)) {
-    return { version: CACHE_VERSION, files: {}, overview: null };
+    return { version: CACHE_VERSION, files: {}, overview: null, boundaries: null };
   }
   try {
     const parsed = JSON.parse(readFileSync(cachePath, "utf-8"));
     if (parsed.version !== CACHE_VERSION) {
-      return { version: CACHE_VERSION, files: {}, overview: null };
+      return { version: CACHE_VERSION, files: {}, overview: null, boundaries: null };
     }
     return parsed;
   } catch {
-    return { version: CACHE_VERSION, files: {}, overview: null };
+    return { version: CACHE_VERSION, files: {}, overview: null, boundaries: null };
   }
 }
 

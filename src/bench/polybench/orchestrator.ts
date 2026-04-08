@@ -205,6 +205,8 @@ export async function runPolybench(opts: PolyBenchOptions): Promise<ArmReport[]>
         elapsedSec: 0,
         costUsd: 0,
         numTurns: "unknown",
+        inputTokens: 0,
+        outputTokens: 0,
         error: null,
         skipped: false,
       };
@@ -322,6 +324,8 @@ async function runOneCell(
   cell.elapsedSec = runResult.elapsedSec;
   cell.costUsd = runResult.costUsd;
   cell.numTurns = runResult.numTurns;
+  cell.inputTokens = runResult.inputTokens;
+  cell.outputTokens = runResult.outputTokens;
 
   // 5. Capture filtered diff (source-only)
   cell.modelPatch = captureAndFilterDiff(repoPath);

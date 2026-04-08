@@ -10,6 +10,7 @@
 
 import { spawnSync } from "child_process";
 import type { PolyAdapter } from "../types.js";
+import { writeProjectPluginConfig } from "./plugins.js";
 
 export const codesightAdapter: PolyAdapter = {
   name: "codesight",
@@ -29,5 +30,8 @@ export const codesightAdapter: PolyAdapter = {
     if (result.status !== 0) {
       throw new Error(`codesight --init exited with status ${result.status ?? "unknown"}`);
     }
+
+    // Disable briefed and serena plugins so neither contaminates codesight's arm.
+    writeProjectPluginConfig(repoPath, { briefed: false, serena: false });
   },
 };
