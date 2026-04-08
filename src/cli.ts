@@ -5,6 +5,7 @@ import { initCommand } from "./commands/init.js";
 import { planCommand } from "./commands/plan.js";
 import { statsCommand } from "./commands/stats.js";
 import { benchCommand } from "./commands/bench.js";
+import { polybenchCommand } from "./commands/polybench.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { removeGitHook } from "./deliver/git-hook.js";
 import { startMcpServer } from "./mcp/server.js";
@@ -85,5 +86,27 @@ program
   .action(async (opts: { repo: string }) => {
     await startMcpServer(opts.repo);
   });
+
+program
+  .command("polybench")
+  .description(
+    "Universal AI-coding-tool bench harness — runs paired comparisons of briefed, codesight, and other tools against SWE-PolyBench tasks with the same model, same prompt, same evaluator. Reproducible head-to-head."
+  )
+  .requiredOption("--arms <list>", "Comma-separated arm names (e.g. briefed,codesight,baseline)")
+  .requiredOption("--tasks <path>", "Path to a SWE-PolyBench CSV export")
+  .option("--n <number>", "Limit to the first N tasks (after language filter)", (v) => parseInt(v, 10))
+  .option("--output <dir>", "Where predictions_*.jsonl and report.md land", ".briefed/bench/polybench")
+  .option("--work-dir <dir>", "Where per-task repos are cloned (wiped after each task)", "/tmp/briefed-polybench-work")
+  .option("--max-cost <usd>", "Hard cost cap in USD — the harness aborts if total spent exceeds this", (v) => parseFloat(v), 50)
+  .option("--delay <seconds>", "Sleep between tasks within an arm (rate-limit avoidance)", (v) => parseInt(v, 10), 45)
+  .option("--timeout <seconds>", "Per-task claude -p timeout", (v) => parseInt(v, 10), 900)
+  .option("--max-turns <n>", "claude -p --max-turns", (v) => parseInt(v, 10), 40)
+  .option("--language <lang>", "Filter SWE-PolyBench tasks by language", "TypeScript")
+  .option("--no-resume", "Force fresh runs, ignore cached predictions")
+  .option("--rerun <spec>", "Re-run specific cells, e.g. `arm=briefed,task=tailwindlabs__tailwindcss-550`")
+  .option("--parallel-arms", "Run arms in parallel (default sequential)")
+  .option("--dry-run", "Print plan + estimated cost, do not run")
+  .option("--evaluator-path <path>", "Path to SWE-PolyBench eval harness for pass/fail scoring")
+  .action(polybenchCommand);
 
 program.parse();
