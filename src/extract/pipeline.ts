@@ -203,3 +203,22 @@ export function runExtractionPipeline(
     deps,
   };
 }
+
+/**
+ * Re-save the extraction cache after in-place mutations (e.g. mergeDeepAnnotations).
+ * Loads the on-disk cache, patches the extraction for each matching path, and re-saves.
+ * Hashes are unchanged — only the extraction payload is updated.
+ */
+export function updateExtractionCache(root: string, extractions: FileExtraction[]) {
+  const cachePath = join(root, ".briefed", "extract-cache.json");
+  try {
+    const cache: Record<string, { hash: string; extraction: FileExtraction }> =
+      JSON.parse(readFileSync(cachePath, "utf-8"));
+    for (const ext of extractions) {
+      if (cache[ext.path]) cache[ext.path].extraction = ext;
+    }
+    writeFileSync(cachePath, JSON.stringify(cache));
+  } catch (e) {
+    debug(`failed to update extraction cache: ${(e as Error).message}`);
+  }
+}

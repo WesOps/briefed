@@ -12,8 +12,9 @@ import { formatRoutes } from "../extract/routes.js";
 import { formatEnvVars } from "../extract/env.js";
 import { formatScripts } from "../extract/scripts.js";
 import { formatDeps } from "../extract/deps.js";
-import { runDeepAnalysis, buildDeepRules } from "../extract/deep.js";
+import { runDeepAnalysis, buildDeepRules, mergeDeepAnnotations } from "../extract/deep.js";
 import { writeOutputs } from "../deliver/output.js";
+import { updateExtractionCache } from "../extract/pipeline.js";
 import { countTokens, formatTokens } from "../utils/tokens.js";
 
 interface InitOptions {
@@ -66,6 +67,11 @@ export async function initCommand(opts: InitOptions) {
     if (deepResult.ran && deepResult.annotations.size > 0) {
       deepSystemOverview = deepResult.systemOverview;
       deepRules = buildDeepRules(result.extractions, deepResult.annotations, deepResult.directoryBoundaries, result.testMappings, result.depGraph);
+      const merged = mergeDeepAnnotations(result.extractions, deepResult.annotations);
+      if (merged > 0) {
+        updateExtractionCache(root, result.extractions);
+        console.log(`  Enriched ${merged} symbol descriptions from deep analysis`);
+      }
     }
   }
 

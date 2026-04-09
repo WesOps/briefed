@@ -12,6 +12,7 @@ interface CliPolybenchOptions {
   maxCost: number;
   delay: number;
   timeout: number;
+  setupTimeout?: number;
   maxTurns: number;
   language: string;
   resume?: boolean; // commander sets --no-resume to resume=false
@@ -38,6 +39,7 @@ export async function polybenchCommand(opts: CliPolybenchOptions): Promise<void>
     delayBetweenTasksMs: opts.delay * 1000,
     parallelArms: Boolean(opts.parallelArms),
     timeoutMs: opts.timeout * 1000,
+    setupTimeoutMs: opts.setupTimeout !== undefined ? opts.setupTimeout * 1000 : undefined,
     maxTurns: opts.maxTurns,
     // commander's --no-resume sets opts.resume === false; default is true.
     resume: opts.resume !== false,

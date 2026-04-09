@@ -75,6 +75,27 @@ export function generateModuleIndex(
       }
     }
 
+    // Keywords from LLM-generated symbol descriptions (deep analysis).
+    // Descriptions like "Validates YAML config and merges defaults" add
+    // semantic keywords ("yaml", "validates", "merges") that structural
+    // names alone never capture — this is what makes hook matching useful
+    // on real GitHub issue prompts.
+    const descStopWords = new Set([
+      "and", "the", "for", "from", "with", "that", "this", "when",
+      "are", "has", "its", "not", "can", "will", "all", "any", "via",
+      "used", "uses", "each", "into", "over", "per", "was", "been",
+      "than", "also", "only", "then", "both", "more", "some", "such",
+    ]);
+    for (const f of files) {
+      for (const sym of f.symbols) {
+        if (!sym.description) continue;
+        for (const word of sym.description.split(/[^a-zA-Z]+/)) {
+          const w = word.toLowerCase();
+          if (w.length > 3 && !descStopWords.has(w)) keywords.add(w);
+        }
+      }
+    }
+
     // Remove very common/generic keywords
     const genericWords = new Set([
       "src", "lib", "app", "index", "utils", "helpers", "types",

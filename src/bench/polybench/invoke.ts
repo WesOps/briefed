@@ -122,9 +122,12 @@ export function runClaudeOnTask(
     }
     const usage = parsed.usage as Record<string, unknown> | undefined;
     if (usage) {
-      const inp = usage.input_tokens;
+      // input_tokens is uncached-only; add cache_creation + cache_read for true total
+      const inp = (usage.input_tokens as number) || 0;
+      const cacheCreate = (usage.cache_creation_input_tokens as number) || 0;
+      const cacheRead = (usage.cache_read_input_tokens as number) || 0;
       const out = usage.output_tokens;
-      if (typeof inp === "number" && Number.isFinite(inp)) inputTokens = inp;
+      inputTokens = inp + cacheCreate + cacheRead;
       if (typeof out === "number" && Number.isFinite(out)) outputTokens = out;
     }
   } catch {

@@ -15,14 +15,14 @@
  *   7. captureAndFilterDiff() — capture source-only diff.
  *   8. appendPrediction() — durable state.
  *   9. rmSync the clone dir (in finally, always).
- *  10. sleep(delayBetweenTasksMs) before the next task in this arm.
+ *  10. All tasks within an arm run in parallel (Promise.allSettled).
  *
  * If CostCapExceededError fires, we break out of ALL arm loops and still
  * emit a partial report.
  */
 
 import { existsSync, mkdirSync, rmSync } from "fs";
-import { resolve } from "path";
+import { resolve, join } from "path";
 import { findClaude } from "../shared.js";
 import { cloneTask, commitBaseState } from "./clone.js";
 import { runClaudeOnTask } from "./invoke.js";
@@ -35,6 +35,7 @@ import {
 import { CostTracker, CostCapExceededError } from "./cost-tracker.js";
 import { loadTasks } from "./tasks.js";
 import { ADAPTERS } from "./adapters/registry.js";
+import { evaluateCell, collectPassFail } from "./eval.js";
 import type {
   PolyBenchOptions,
   ArmReport,
@@ -43,9 +44,6 @@ import type {
   PolyAdapter,
 } from "./types.js";
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 /** Parse a --rerun spec into a Set of "arm:instanceId" keys. */
 function parseRerunSpec(spec: string | undefined): Set<string> {
@@ -153,12 +151,16 @@ export async function runPolybench(opts: PolyBenchOptions): Promise<ArmReport[]>
     process.exit(130);
   });
 
-  // The loop — sequential by default, can be parallelized across arms
+  // The loop — arms run in parallel (--parallel-arms), tasks within each arm
+  // also run in parallel. Each arm gets its own subdirectory under workDir so
+  // clones don't collide when two arms work on the same instanceId at once.
   const runArm = async (arm: string): Promise<ArmReport> => {
     const adapter = ADAPTERS.get(arm)!; // validated above
     const jsonlPath = predictionsPath(opts.outputDir, arm);
     const existingCells = loadPredictions(jsonlPath);
     const results: CellResult[] = [];
+    // Arm-scoped work dir prevents cross-arm clone collisions
+    const armOpts = { ...opts, workDir: join(opts.workDir, arm) };
 
     console.log(`\n  Arm: ${arm}`);
 
@@ -182,23 +184,30 @@ export async function runPolybench(opts: PolyBenchOptions): Promise<ArmReport[]>
       }
     }
 
+    // Eval result dir for this arm — written by evaluateCell, read by collectPassFail
+    const evalResultDir = join(resolve(opts.outputDir), "eval", arm);
+
     try {
-    for (let i = 0; i < tasks.length; i++) {
-      const task = tasks[i];
+    // Run all tasks for this arm in parallel — each gets an isolated clone dir
+    // under armOpts.workDir (which is already arm-scoped). Cost cap becomes a
+    // soft cap: tasks already in flight finish regardless, but the tracker will
+    // throw once the cap is hit so newly started arms (in --parallel-arms mode)
+    // will abort before starting their task loop.
+    const evalPromises: Promise<void>[] = [];
+    const settled = await Promise.allSettled(tasks.map(async (task, i) => {
       const cellKey = `${arm}:${task.instanceId}`;
 
       // Resume check
       if (opts.resume && existingCells.has(task.instanceId) && !rerunSet.has(cellKey)) {
         const cached = existingCells.get(task.instanceId)!;
         cached.skipped = true;
-        results.push(cached);
         console.log(`    [${i + 1}/${tasks.length}] ${task.instanceId} (cached)`);
-        continue;
+        return cached;
       }
 
       console.log(`    [${i + 1}/${tasks.length}] ${task.instanceId}`);
       let repoPath: string | null = null;
-      const cellStart: CellResult = {
+      const cell: CellResult = {
         instanceId: task.instanceId,
         arm,
         modelPatch: "",
@@ -212,35 +221,53 @@ export async function runPolybench(opts: PolyBenchOptions): Promise<ArmReport[]>
       };
 
       try {
-        repoPath = await runOneCell(task, adapter, briefedCliPath, claudePath, opts, cellStart);
-        tracker.add(cellStart.costUsd);
+        repoPath = await runOneCell(task, adapter, briefedCliPath, claudePath, armOpts, cell);
+        tracker.add(cell.costUsd);
         tracker.checkCap(opts.maxCostUsd);
       } catch (e) {
-        if (e instanceof CostCapExceededError) {
-          // Record what we have and break out of the task loop
-          if (cellStart.costUsd > 0 || cellStart.elapsedSec > 0) {
-            appendPrediction(jsonlPath, cellStart);
-            results.push(cellStart);
-          }
-          if (repoPath && existsSync(repoPath)) {
-            rmSync(repoPath, { recursive: true, force: true });
-          }
-          throw e;
-        }
-        cellStart.error = (e as Error).message.slice(0, 500);
-        console.log(`      error: ${cellStart.error.slice(0, 120)}`);
+        cell.error = (e as Error).message.slice(0, 500);
+        console.log(`      error: ${cell.error.slice(0, 120)}`);
       } finally {
         if (repoPath && existsSync(repoPath)) {
           rmSync(repoPath, { recursive: true, force: true });
         }
       }
 
-      appendPrediction(jsonlPath, cellStart);
-      results.push(cellStart);
+      appendPrediction(jsonlPath, cell);
 
-      if (i < tasks.length - 1) {
-        await sleep(opts.delayBetweenTasksMs);
+      // Fire off evaluation in the background — does not block the next task.
+      // Each instance writes to its own result file so parallel evals are safe.
+      if (opts.evaluatorPath) {
+        const evalP = evaluateCell(
+          opts.evaluatorPath,
+          opts.tasksCsv,
+          jsonlPath,
+          task.instanceId,
+          evalResultDir,
+        ).then((resolved) => {
+          const label = resolved === true ? "PASS" : resolved === false ? "FAIL" : "EVAL_ERR";
+          console.log(`      [eval] ${task.instanceId}: ${label}`);
+        }).catch((e: Error) => {
+          console.log(`      [eval] error for ${task.instanceId}: ${e.message?.slice(0, 80)}`);
+        });
+        evalPromises.push(evalP);
       }
+
+      return cell;
+    }));
+
+    for (const outcome of settled) {
+      if (outcome.status === "fulfilled") {
+        results.push(outcome.value);
+      } else {
+        console.log(`    task error: ${String(outcome.reason).slice(0, 120)}`);
+      }
+    }
+
+    // Wait for all in-flight evaluations before computing pass/fail counts
+    if (evalPromises.length > 0) {
+      console.log(`    waiting for ${evalPromises.length} evaluation(s) to finish...`);
+      await Promise.allSettled(evalPromises);
     }
     } finally {
       // Per-arm teardown MUST run even on error / cost-cap exit so the next
@@ -256,13 +283,14 @@ export async function runPolybench(opts: PolyBenchOptions): Promise<ArmReport[]>
       }
     }
 
+    const passFail = opts.evaluatorPath ? collectPassFail(evalResultDir) : null;
     const report: ArmReport = {
       arm,
       results,
       totalCostUsd: results.reduce((sum, c) => sum + c.costUsd, 0),
       totalElapsedSec: results.reduce((sum, c) => sum + c.elapsedSec, 0),
-      passCount: null,
-      failCount: null,
+      passCount: passFail?.passCount ?? null,
+      failCount: passFail?.failCount ?? null,
     };
     return report;
   };
@@ -307,9 +335,17 @@ async function runOneCell(
   const repoPath = await cloneTask(task, opts.workDir);
 
   // 2. Adapter setup (writes tool artifacts)
+  // Deep cache: persisted per-instanceId under outputDir/deep-caches/ so
+  // re-runs on the same commit pay zero annotation cost.
+  const deepCachePath = join(
+    resolve(opts.outputDir),
+    "deep-caches",
+    `${task.instanceId}.json`,
+  );
   await adapter.setup(repoPath, {
     briefedCliPath,
-    timeoutMs: opts.timeoutMs,
+    timeoutMs: opts.setupTimeoutMs ?? opts.timeoutMs,
+    deepCachePath,
   });
 
   // 3. Commit the post-setup state as the base

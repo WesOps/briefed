@@ -207,20 +207,27 @@ process.stdin.on("end", () => {
     .filter((s) => s.hits > 0)
     .sort((a, b) => b.hits - a.hits || b.complexity - a.complexity);
 
-    // Helper: load related modules (dependencies or dependents) from a contract
+    // Helper: load related modules (dependencies or dependents) from a contract.
+    // Parses the YAML list under the "field:" header line-by-line — avoids RegExp
+    // string escaping issues where character classes collapsed in non-strict mode.
     function loadRelated(mod, label, field) {
       const contractText = safeRead(join(contractsDir, mod.file));
       if (!contractText) return;
-      const match = contractText.match(new RegExp(field + ":\\\\n([\\\\s\\\\S]*?)(?:\\\\n\\\\w|$)"));
-      if (!match) return;
-      const items = match[1].match(/- (.+)/g) || [];
-      for (const item of items) {
-        const name = item.replace("- ", "").trim();
+      const lines = contractText.split('\n');
+      const headerIdx = lines.indexOf(field + ':');
+      if (headerIdx === -1) return;
+      const names = [];
+      for (let i = headerIdx + 1; i < lines.length; i++) {
+        const m = lines[i].match(/^  - (.+)/);
+        if (!m) break;
+        names.push(m[1].trim());
+      }
+      for (const name of names) {
         const relMod = index.modules.find((m) => m.name === name);
         if (relMod && !loaded.has(relMod.file) && used < budget) {
           const contract = safeRead(join(contractsDir, relMod.file));
           if (contract && used + contract.length <= budget) {
-            output.push("# " + label + ": " + relMod.dir + "\\n" + contract);
+            output.push("# " + label + ": " + relMod.dir + "\n" + contract);
             used += contract.length;
             loaded.add(relMod.file);
           }

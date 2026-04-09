@@ -27,6 +27,12 @@ export interface AdapterOptions {
   briefedCliPath: string;
   /** Per-step timeout for the adapter's init. */
   timeoutMs: number;
+  /**
+   * If set, the briefed adapter restores this file as .briefed/deep-cache.json
+   * before running `briefed init --deep`, then harvests the updated cache back
+   * to this path afterwards. Skips re-annotating files that haven't changed.
+   */
+  deepCachePath?: string;
 }
 
 /**
@@ -81,6 +87,9 @@ export interface PolyBenchOptions {
   parallelArms: boolean;
   /** Per-task claude -p timeout. */
   timeoutMs: number;
+  /** Timeout for adapter setup (e.g. briefed init --deep). Defaults to timeoutMs if unset.
+   *  Large repos need more time for deep analysis than claude itself takes. */
+  setupTimeoutMs?: number;
   /** claude -p --max-turns. */
   maxTurns: number;
   /** If true, skip cells whose prediction already exists on disk. */

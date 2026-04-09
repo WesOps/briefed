@@ -1,4 +1,5 @@
 import { extractRoutes } from "../extract/routes.js";
+import { loadCachedExtractions } from "./cached-loader.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 /**
@@ -6,6 +7,18 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
  */
 export function routeDetail(root: string, method?: string, path?: string): CallToolResult {
   const routes = extractRoutes(root);
+
+  // Build handler name → description map from enriched extraction cache.
+  // Populated only after `briefed init --deep` calls mergeDeepAnnotations.
+  const symbolDescriptions = new Map<string, string>();
+  try {
+    const { extractions } = loadCachedExtractions(root);
+    for (const ext of extractions) {
+      for (const sym of ext.symbols) {
+        if (sym.description) symbolDescriptions.set(sym.name, sym.description);
+      }
+    }
+  } catch { /* no cache — output degrades gracefully */ }
 
   if (routes.length === 0) {
     return {
@@ -60,7 +73,9 @@ export function routeDetail(root: string, method?: string, path?: string): CallT
       if (r.middleware.length > 0) tags.push(...r.middleware);
       const tagStr = tags.length > 0 ? ` [${tags.join(", ")}]` : "";
       const handler = r.handler !== "default" ? ` → ${r.handler}` : "";
-      lines.push(`- **${r.method}** \`${r.path}\`${handler}${tagStr} — \`${r.file}\``);
+      const desc = r.handler !== "default" ? symbolDescriptions.get(r.handler) : undefined;
+      const descStr = desc ? ` — ${desc}` : "";
+      lines.push(`- **${r.method}** \`${r.path}\`${handler}${tagStr}${descStr} — \`${r.file}\``);
     }
     lines.push("");
   }

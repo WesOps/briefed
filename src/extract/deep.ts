@@ -215,7 +215,15 @@ export async function runDeepAnalysis(
     const prompt = buildBatchPrompt(batch, root, scoreMap, criticalCutoff, peripheralCutoff);
     if (!prompt) continue;
 
-    const raw = runClaudeJson(claudePath, prompt, root);
+    // Use Sonnet for batches that contain critical-tier files (top 20% by score)
+    // — those are the complex, high-fanin files where bugs actually live and where
+    // a precise 22-word description is meaningfully better than a vague one.
+    // Peripheral and normal files use Haiku; annotations are cached so cost is one-time.
+    const hasCritical = criticalCutoff !== undefined &&
+      batch.some(ext => (scoreMap?.get(ext.path) ?? 0) >= criticalCutoff);
+    const annotationModel = hasCritical ? "sonnet" : "haiku";
+
+    const raw = runClaudeJson(claudePath, prompt, root, annotationModel);
     if (!raw) continue;
 
     const parsed = parseBatchResponse(raw);
