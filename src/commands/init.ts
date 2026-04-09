@@ -4,7 +4,7 @@ import { detectStack } from "../utils/detect.js";
 import { scanFiles } from "../extract/scanner.js";
 import { detectMonorepo } from "../extract/monorepo.js";
 import { runExtractionPipeline } from "../extract/pipeline.js";
-import { generateSkeleton } from "../generate/skeleton.js";
+import { generateSkeleton, adaptiveSkeletonOptions } from "../generate/skeleton.js";
 import { generateModuleIndex, writeModuleIndex, generateSimpleContracts } from "../generate/index-file.js";
 import { formatConventions } from "../extract/conventions.js";
 import { formatSchemas } from "../extract/schema.js";
@@ -76,15 +76,12 @@ export async function initCommand(opts: InitOptions) {
   }
 
   // Step 4: Generate skeleton and enrich it
-  // Auto-scale token budget: small projects get 800, large ones up to 3000
-  // Auto budget: 800 base + 15 tokens per file, capped at 4000
-  // ~20 files → 1100, ~70 files → 1850, ~200 files → 3800
-  const maxTokens = opts.maxTokens === "auto"
-    ? Math.min(4000, Math.max(800, Math.round(800 + scan.totalFiles * 15)))
-    : parseInt(opts.maxTokens, 10);
+  const skeletonOpts = opts.maxTokens === "auto"
+    ? adaptiveSkeletonOptions(scan.totalFiles)
+    : { maxTokens: parseInt(opts.maxTokens, 10), topN: 200 };
 
   console.log("  Generating skeleton...");
-  const skeleton = generateSkeleton(stack, result.extractions, result.depGraph, result.complexityScores, { maxTokens });
+  const skeleton = generateSkeleton(stack, result.extractions, result.depGraph, result.complexityScores, skeletonOpts);
   const skeletonTokens = countTokens(skeleton);
   console.log(`  Skeleton: ${formatTokens(skeletonTokens)} tokens`);
 

@@ -2,11 +2,19 @@ import { readFileSync } from "fs";
 import { join, dirname, basename, extname } from "path";
 import { glob } from "glob";
 
+export interface TestCandidate {
+  file: string;
+  score: number;
+  reasons: string[];
+}
+
 export interface TestMapping {
   sourceFile: string;     // relative path to source file
-  testFile: string;       // relative path to matching test file
+  testFile: string;       // best-match test file (primary)
   testNames: string[];    // extracted test/describe/it names
   testCount: number;      // number of test cases
+  confidence: number;     // 0-1: how confident we are in the primary match
+  candidates: TestCandidate[];  // all scored candidates, best first
 }
 
 /**
@@ -50,32 +58,38 @@ export function findTestMappings(
     // glob errors are non-fatal
   }
 
-  // Match source files to test files
+  // Match source files to test files — ranked candidates with confidence
   for (const sourceFile of sourceFiles) {
     if (isTestFile(sourceFile)) continue;
 
-    const matched = findMatchingTest(sourceFile, testFileSet);
-    if (matched) {
-      const testPath = join(root, matched);
-      let testNames: string[] = [];
-      let testCount = 0;
+    const candidates = scoreTestCandidates(sourceFile, testFileSet, root);
+    if (candidates.length === 0) continue;
 
-      try {
-        const content = readFileSync(testPath, "utf-8");
-        const extracted = extractTestNames(content, extname(matched));
-        testNames = extracted.names;
-        testCount = extracted.count;
-      } catch {
-        // Can't read test file — still map it
-      }
+    const best = candidates[0];
+    const testPath = join(root, best.file);
+    let testNames: string[] = [];
+    let testCount = 0;
 
-      mappings.push({
-        sourceFile,
-        testFile: matched,
-        testNames,
-        testCount,
-      });
+    try {
+      const content = readFileSync(testPath, "utf-8");
+      const extracted = extractTestNames(content, extname(best.file));
+      testNames = extracted.names;
+      testCount = extracted.count;
+    } catch {
+      // Can't read test file — still map it
     }
+
+    // Confidence: normalize best score; 10+ = exact match = 1.0
+    const confidence = Math.min(best.score / 10, 1);
+
+    mappings.push({
+      sourceFile,
+      testFile: best.file,
+      testNames,
+      testCount,
+      confidence,
+      candidates: candidates.slice(0, 3),
+    });
   }
 
   return mappings;
@@ -98,55 +112,70 @@ function isTestFile(filePath: string): boolean {
 }
 
 /**
- * Find the test file that matches a given source file.
+ * Score all test file candidates for a source file.
+ * Returns ranked candidates (highest score first).
+ *
+ * Scoring:
+ *   +10  exact basename match (foo.test.ts for foo.ts)
+ *   + 5  partial basename match (foo appears in test name)
+ *   + 3  same directory
+ *   + 2  __tests__ sibling directory
+ *   + 2  conventional path replacement (src/ → test/)
+ *   + 1  fuzzy name contains source name
  */
-function findMatchingTest(
+function scoreTestCandidates(
   sourceFile: string,
-  testFiles: Set<string>
-): string | null {
+  testFiles: Set<string>,
+  _root: string,
+): TestCandidate[] {
   const dir = dirname(sourceFile);
   const ext = extname(sourceFile);
   const name = basename(sourceFile, ext);
+  const scores = new Map<string, { score: number; reasons: string[] }>();
 
-  // Try common test file naming patterns
-  const candidates = [
-    // Colocated: foo.test.ts next to foo.ts
-    `${dir}/${name}.test${ext}`,
-    `${dir}/${name}.spec${ext}`,
-    // __tests__ directory
-    `${dir}/__tests__/${name}.test${ext}`,
-    `${dir}/__tests__/${name}${ext}`,
-    // test/ directory at same level
-    `${dir.replace(/\/src\//, "/test/")}/${name}.test${ext}`,
-    `${dir.replace(/\/src\//, "/test/")}/${name}${ext}`,
-    `${dir.replace(/\/src\//, "/tests/")}/${name}.test${ext}`,
-    // test/ at root
-    `test/${name}.test${ext}`,
-    `test/${name}${ext}`,
-    `tests/${name}.test${ext}`,
-    // Python conventions
-    `${dir}/test_${name}${ext}`,
-    `test/test_${name}${ext}`,
-    `tests/test_${name}${ext}`,
-    // Go conventions
-    `${dir}/${name}_test${ext}`,
-    // Rust conventions
-    `tests/${name}${ext}`,
-  ];
-
-  for (const candidate of candidates) {
-    const normalized = candidate.replace(/\\/g, "/");
-    if (testFiles.has(normalized)) return normalized;
+  function addScore(file: string, delta: number, reason: string) {
+    const normalized = file.replace(/\\/g, "/");
+    if (!testFiles.has(normalized)) return;
+    const entry = scores.get(normalized) ?? { score: 0, reasons: [] };
+    entry.score += delta;
+    entry.reasons.push(reason);
+    scores.set(normalized, entry);
   }
 
-  // Fuzzy match: look for any test file containing the source name
+  // Exact colocated patterns
+  addScore(`${dir}/${name}.test${ext}`, 10, "exact basename");
+  addScore(`${dir}/${name}.spec${ext}`, 10, "exact basename");
+  addScore(`${dir}/__tests__/${name}.test${ext}`, 9, "__tests__ sibling");
+  addScore(`${dir}/__tests__/${name}${ext}`, 8, "__tests__ sibling");
+  addScore(`${dir.replace(/\/src\//, "/test/")}/${name}.test${ext}`, 7, "src→test path");
+  addScore(`${dir.replace(/\/src\//, "/test/")}/${name}${ext}`, 6, "src→test path");
+  addScore(`${dir.replace(/\/src\//, "/tests/")}/${name}.test${ext}`, 7, "src→tests path");
+  addScore(`test/${name}.test${ext}`, 5, "root test dir");
+  addScore(`test/${name}${ext}`, 4, "root test dir");
+  addScore(`tests/${name}.test${ext}`, 5, "root tests dir");
+  addScore(`tests/${name}${ext}`, 4, "root tests dir");
+  // Language-specific
+  addScore(`${dir}/test_${name}${ext}`, 10, "python exact");
+  addScore(`test/test_${name}${ext}`, 8, "python test dir");
+  addScore(`tests/test_${name}${ext}`, 8, "python tests dir");
+  addScore(`${dir}/${name}_test${ext}`, 10, "go exact");
+  addScore(`tests/${name}${ext}`, 6, "rust tests dir");
+
+  // Fuzzy: scan all test files for partial name match
   for (const testFile of testFiles) {
+    if (scores.has(testFile)) continue; // already scored exactly
     const testName = basename(testFile, extname(testFile))
       .replace(/\.test$|\.spec$|^test_|_test$/, "");
-    if (testName === name) return testFile;
+    if (testName === name) {
+      addScore(testFile, 5, "fuzzy basename match");
+    } else if (testName.includes(name) || name.includes(testName)) {
+      addScore(testFile, 2, "partial name match");
+    }
   }
 
-  return null;
+  return [...scores.entries()]
+    .map(([file, { score, reasons }]) => ({ file, score, reasons }))
+    .sort((a, b) => b.score - a.score);
 }
 
 /**

@@ -37,6 +37,7 @@ export function generateBreadcrumb(): string {
     "  by Claude Code when you touch matching files",
     "",
     "MCP shortcuts (available when briefed MCP is registered):",
+    "- `briefed_context` — get relevant module contracts by topic (useful for orientation at task start)",
     "- `briefed_issue_candidates` — narrow down relevant files from a bug description",
     "- `briefed_symbol` — look up a symbol by name",
     "- `briefed_routes` / `briefed_schema` — pre-indexed routes and DB models",

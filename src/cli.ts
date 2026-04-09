@@ -99,7 +99,7 @@ program
   .option("--work-dir <dir>", "Where per-task repos are cloned (wiped after each task)", "/tmp/briefed-polybench-work")
   .option("--max-cost <usd>", "Hard cost cap in USD — the harness aborts if total spent exceeds this", (v) => parseFloat(v), 50)
   .option("--delay <seconds>", "Sleep between tasks within an arm (rate-limit avoidance)", (v) => parseInt(v, 10), 10)
-  .option("--timeout <seconds>", "Per-task claude -p timeout", (v) => parseInt(v, 10), 900)
+  .option("--timeout <seconds>", "Per-task claude -p timeout", (v) => parseInt(v, 10), 1800)
   .option("--setup-timeout <seconds>", "Adapter setup timeout (e.g. briefed init --deep); defaults to --timeout", (v) => parseInt(v, 10))
   .option("--max-turns <n>", "claude -p --max-turns", (v) => parseInt(v, 10), 40)
   .option("--language <lang>", "Filter SWE-PolyBench tasks by language", "TypeScript")

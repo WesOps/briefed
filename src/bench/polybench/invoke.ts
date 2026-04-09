@@ -88,7 +88,7 @@ export function runClaudeOnTask(
       "-p",
       prompt,
       "--output-format",
-      "json",
+      "stream-json",
       "--max-turns",
       String(opts.maxTurns),
       "--permission-mode",
@@ -110,28 +110,31 @@ export function runClaudeOnTask(
   let inputTokens = 0;
   let outputTokens = 0;
 
-  try {
-    const parsed = JSON.parse(stdout) as Record<string, unknown>;
-    const cost = parsed.total_cost_usd;
-    if (typeof cost === "number" && Number.isFinite(cost)) {
-      costUsd = cost;
+  // stream-json emits one JSON event per line; scan all lines for the last
+  // "result" event. This works even on timeout — whatever was flushed before
+  // SIGTERM is still in stdout, and intermediate events are line-buffered.
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const event = JSON.parse(trimmed) as Record<string, unknown>;
+      if (event.type !== "result") continue;
+      const cost = event.cost_usd ?? event.total_cost_usd;
+      if (typeof cost === "number" && Number.isFinite(cost)) costUsd = cost;
+      const turns = event.num_turns;
+      if (typeof turns === "number" && Number.isFinite(turns)) numTurns = turns;
+      const usage = event.usage as Record<string, unknown> | undefined;
+      if (usage) {
+        const inp = (usage.input_tokens as number) || 0;
+        const cacheCreate = (usage.cache_creation_input_tokens as number) || 0;
+        const cacheRead = (usage.cache_read_input_tokens as number) || 0;
+        const out = usage.output_tokens;
+        inputTokens = inp + cacheCreate + cacheRead;
+        if (typeof out === "number" && Number.isFinite(out)) outputTokens = out;
+      }
+    } catch {
+      // non-JSON line (e.g. partial write at kill time) — skip
     }
-    const turns = parsed.num_turns;
-    if (typeof turns === "number" && Number.isFinite(turns)) {
-      numTurns = turns;
-    }
-    const usage = parsed.usage as Record<string, unknown> | undefined;
-    if (usage) {
-      // input_tokens is uncached-only; add cache_creation + cache_read for true total
-      const inp = (usage.input_tokens as number) || 0;
-      const cacheCreate = (usage.cache_creation_input_tokens as number) || 0;
-      const cacheRead = (usage.cache_read_input_tokens as number) || 0;
-      const out = usage.output_tokens;
-      inputTokens = inp + cacheCreate + cacheRead;
-      if (typeof out === "number" && Number.isFinite(out)) outputTokens = out;
-    }
-  } catch {
-    // claude -p output wasn't a clean JSON envelope — leave defaults.
   }
 
   return {

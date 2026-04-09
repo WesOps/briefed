@@ -16,6 +16,23 @@ const DEFAULT_OPTIONS: SkeletonOptions = {
 };
 
 /**
+ * Compute adaptive skeleton budget based on codebase size.
+ * Small repos get the compact default. Large repos scale up so the skeleton
+ * covers a meaningful fraction of files instead of a fixed 50-file slice.
+ *
+ * Token budget: 1000 base + 2 per file, capped at 8000.
+ *   50 files → ~1100 tok   200 files → ~1400 tok
+ *   500 files → ~2000 tok  3000 files → ~7000 tok
+ * topN: 50 base + 1 per 5 files, capped at 200.
+ *   50 files → 60   500 files → 150   1000+ files → 200
+ */
+export function adaptiveSkeletonOptions(fileCount: number): SkeletonOptions {
+  const maxTokens = Math.min(8000, 1000 + fileCount * 2);
+  const topN = Math.min(200, 50 + Math.floor(fileCount / 5));
+  return { maxTokens, topN };
+}
+
+/**
  * Generate the L1 skeleton — a token-efficient structural map of the codebase.
  * Uses PageRank to prioritize the most central files.
  * Output format: Markdown (most token-efficient for hierarchical text).

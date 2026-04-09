@@ -1,8 +1,9 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
+import { join, dirname, basename } from "path";
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
 import { debug } from "../utils/log.js";
+import { computePersonalizedPageRank } from "../utils/pagerank.js";
 import type { FileExtraction, Symbol } from "./signatures.js";
 import type { DepGraph } from "./depgraph.js";
 import type { ComplexityScore } from "./complexity.js";
@@ -152,6 +153,15 @@ export async function runDeepAnalysis(
   const testedFiles = new Set(testMappings.map((t) => t.sourceFile));
   const gitSignals = getGitSignals(root);
 
+  // Personalized PageRank seeded from entrypoints (routes, CLI, schema, public API roots).
+  // This concentrates rank on files reachable from what users actually invoke,
+  // rather than the globally most-imported files (which are often utilities).
+  const entrypointSeeds = buildEntrypointSeeds(extractions, depGraph);
+  const personalizedRank = computePersonalizedPageRank(
+    depGraph.nodes,
+    entrypointSeeds,
+  );
+
   // Pick the files worth annotating: must have at least one undocumented
   // exported function/method/class, ranked by blended importance score.
   const candidates = extractions
@@ -163,14 +173,17 @@ export async function runDeepAnalysis(
           ["function", "method", "class", "component"].includes(s.kind),
       ),
     )
-    .sort((a, b) => scoreFile(b, depGraph, complexityMap, gitSignals, testedFiles) - scoreFile(a, depGraph, complexityMap, gitSignals, testedFiles))
+    .sort((a, b) =>
+      scoreFile(b, depGraph, complexityMap, gitSignals, testedFiles, personalizedRank) -
+      scoreFile(a, depGraph, complexityMap, gitSignals, testedFiles, personalizedRank)
+    )
     .slice(0, maxFilesToAnnotate(extractions.length));
 
   // Build score map for tier-aware prompting. Candidates are sorted
   // descending so rank position directly encodes importance.
   const scoreMap = new Map<string, number>();
   for (const ext of candidates) {
-    scoreMap.set(ext.path, scoreFile(ext, depGraph, complexityMap, gitSignals, testedFiles));
+    scoreMap.set(ext.path, scoreFile(ext, depGraph, complexityMap, gitSignals, testedFiles, personalizedRank));
   }
   // Thresholds: top 20% = critical, bottom 20% = peripheral, rest = normal.
   const sortedScores = [...scoreMap.values()].sort((a, b) => b - a);
@@ -492,8 +505,10 @@ function scoreFile(
   complexityMap: Map<string, ComplexityScore>,
   gitSignals: Map<string, GitSignals>,
   testedFiles: Set<string>,
+  personalizedRank?: Map<string, number>,
 ): number {
-  const pageRank = depGraph.pageRank.get(ext.path) || 0;
+  // Use personalized PageRank when available (entrypoint-seeded), fall back to global
+  const pageRank = (personalizedRank ?? depGraph.pageRank).get(ext.path) || 0;
   const fanOut = depGraph.nodes.get(ext.path)?.outEdges.length || 0;
   const complexity = complexityMap.get(ext.path)?.score || 0;
   const git = gitSignals.get(ext.path);
@@ -507,13 +522,69 @@ function scoreFile(
   const complexNorm = Math.min(complexity / 10, 1);
 
   return (
-    churnNorm * 3.0 +     // highest weight: best defect predictor
-    minorNorm * 2.0 +     // diffuse ownership: strong predictor
-    pageRankNorm * 1.5 +  // centrality: architectural importance
-    fanOutNorm * 1.0 +    // efferent coupling: bug surface
-    complexNorm * 0.8 +   // cyclomatic complexity
-    hasTests * 0.5        // leaf implementation bonus
+    pageRankNorm * 4.0 +   // highest weight: structural centrality via personalized PageRank
+    churnNorm * 1.0 +      // recent activity (was 3.0 — demoted; churn over-weights volatile example files in stable libs)
+    minorNorm * 2.0 +      // diffuse ownership: strong predictor of defect density
+    fanOutNorm * 1.0 +     // efferent coupling: bug surface
+    complexNorm * 0.8 +    // cyclomatic complexity
+    hasTests * 0.5         // leaf implementation bonus
   );
+}
+
+/**
+ * Build entrypoint seed weights for personalized PageRank.
+ * Seeds: route handlers, CLI entrypoints, schema files, public API roots, and
+ * files with zero inEdges (nothing imports them — invoked externally).
+ * Shifts PageRank mass toward user-facing code instead of utility leaves.
+ */
+function buildEntrypointSeeds(
+  extractions: FileExtraction[],
+  depGraph: DepGraph,
+): Map<string, number> {
+  const seeds = new Map<string, number>();
+
+  const ENTRYPOINT_RE = /(?:^|\/)(index|main|app|cli|server|routes?|router|entry|start|mod|lib)\.[jt]sx?$/i;
+  const ROUTE_RE = /(?:route|controller|handler|endpoint)/i;
+  const SCHEMA_RE = /(?:schema|model|migration|prisma)/i;
+  // Library barrel: re-exports many symbols, zero or few imports itself
+  const isBarrel = (ext: FileExtraction) =>
+    ext.symbols.filter((s) => s.exported).length >= 5 &&
+    (depGraph.nodes.get(ext.path)?.outEdges.length ?? 0) <= 2;
+
+  for (const ext of extractions) {
+    const p = ext.path;
+    const node = depGraph.nodes.get(p);
+    let weight = 0;
+
+    // Zero in-edges: externally invoked, not imported by anyone
+    if (node && node.inEdges.length === 0 && node.outEdges.length > 0) weight += 2;
+
+    // Named entrypoint or bin/ file
+    if (ENTRYPOINT_RE.test(p) || p.includes("/bin/")) weight += 3;
+
+    // Route/controller/handler
+    if (ROUTE_RE.test(basename(p))) weight += 2;
+
+    // Schema/model files
+    if (SCHEMA_RE.test(basename(p))) weight += 2;
+
+    // Library barrel: re-exports many symbols with few own imports
+    if (isBarrel(ext)) weight += 3;
+
+    // Exported symbols with many cross-file callers (public API)
+    const maxCallers = Math.max(
+      0,
+      ...ext.symbols
+        .filter((s) => s.exported)
+        .map((s) => (depGraph.symbolRefs?.get(`${p}#${s.name}`)?.length ?? 0)),
+    );
+    if (maxCallers >= 3) weight += 1;
+    if (maxCallers >= 10) weight += 1;
+
+    if (weight > 0) seeds.set(p, weight);
+  }
+
+  return seeds;
 }
 
 function safeRead(path: string): string | null {
@@ -776,14 +847,12 @@ async function generateDirectoryBoundaries(
     sections.push(`${dir}/: ${top}`);
   }
 
-  const prompt = `Given these codebase directories and their key behaviors, for EACH directory write ONE sentence describing:
-- What this directory is responsible for
-- What it is NOT responsible for (and where those concerns live instead)
+  const prompt = `Given these codebase directories and their key behaviors, for EACH directory write ONE sentence describing what it is responsible for and what it does. Focus on what an agent would find here when working on a bug or feature.
 
-Focus on architectural boundaries that would help a developer know WHERE to look when fixing a bug.
+Keep descriptions positive and specific — avoid "NOT responsible for X" phrasing, which can mislead agents away from the right directory. Instead, describe what IS here.
 
-Respond ONLY with a JSON object mapping directory path to its boundary sentence. Example:
-{"src/runtime": "Handles execution of compiled output in the browser — NOT compilation logic; for compiler bugs see src/compiler.", "src/compiler": "Transforms source files into executable JS — NOT runtime behavior; for execution bugs see src/runtime."}
+Respond ONLY with a JSON object mapping directory path to its description sentence. Example:
+{"src/runtime": "Executes compiled output in the browser — component lifecycle, event dispatch, and DOM reconciliation.", "src/compiler": "Transforms source files into executable JS — parsing, type-checking, and code emission."}
 
 DIRECTORIES:
 ${sections.join("\n")}`;

@@ -15,9 +15,18 @@ export interface ModuleEntry {
   file: string;      // contract filename
 }
 
+export interface Bm25Params {
+  /** Average keyword count per module (document length normalization). */
+  avgdl: number;
+  /** keyword → IDF score. Higher = rarer = more discriminative. */
+  idf: Record<string, number>;
+}
+
 export interface ModuleIndex {
   modules: ModuleEntry[];
   generated: string;
+  /** Pre-computed BM25 parameters for hook scoring. */
+  bm25?: Bm25Params;
 }
 
 /**
@@ -86,15 +95,16 @@ export function generateModuleIndex(
       "used", "uses", "each", "into", "over", "per", "was", "been",
       "than", "also", "only", "then", "both", "more", "some", "such",
       "given", "based", "build", "built", "call", "calls", "load",
-      "loads", "read", "reads", "write", "writes", "gets", "sets",
-      "runs", "returns", "result", "results", "value", "values",
-      "data", "file", "files", "path", "paths", "name", "names",
+      "loads", "gets", "sets", "runs", "returns", "result", "results",
       "list", "array", "object", "string", "number", "boolean",
-      "type", "types", "true", "false", "null", "node", "line",
-      "text", "code", "item", "items", "entry", "entries", "field",
-      "fields", "found", "find", "finds", "check", "checks", "pass",
+      "type", "types", "true", "false", "null",
+      "found", "find", "finds", "check", "checks", "pass",
       "fail", "fails", "make", "makes", "take", "takes", "like",
       "after", "before", "where", "which", "their", "there", "have",
+      // Note: "read", "write", "value", "data", "file", "path", "name",
+      // "node", "line", "text", "code", "item", "entry", "field" are
+      // intentionally NOT stopped — they are load-bearing discriminators
+      // in editor/compiler codebases (vscode, prettier, etc.).
     ]);
     for (const f of files) {
       for (const sym of f.symbols.filter((s) => s.exported)) {
@@ -135,9 +145,26 @@ export function generateModuleIndex(
   // Sort by complexity (most complex first — they need context most)
   modules.sort((a, b) => b.complexity - a.complexity);
 
+  // Compute BM25 parameters for hook scoring.
+  // IDF = log((N - df + 0.5) / (df + 0.5) + 1) — Robertson-Sparck Jones variant.
+  // Stored in index.json so the hook can use it without re-computing at query time.
+  const N = modules.length;
+  const df = new Map<string, number>();
+  for (const mod of modules) {
+    const seen = new Set(mod.keywords);
+    for (const kw of seen) df.set(kw, (df.get(kw) || 0) + 1);
+  }
+  const idf: Record<string, number> = {};
+  for (const [kw, docFreq] of df) {
+    idf[kw] = Math.log((N - docFreq + 0.5) / (docFreq + 0.5) + 1);
+  }
+  const totalKeywords = modules.reduce((sum, m) => sum + m.keywords.length, 0);
+  const avgdl = N > 0 ? totalKeywords / N : 1;
+
   return {
     modules,
     generated: new Date().toISOString(),
+    bm25: { avgdl, idf },
   };
 }
 

@@ -189,23 +189,77 @@ process.stdin.on("end", () => {
     if (!index.modules) { process.exit(0); return; }
     const complexity = scorePrompt(safePrompt);
 
-    // Adaptive budget based on prompt complexity
-    const budget = complexity <= 3 ? 1500 : complexity <= 6 ? 5000 : 9000;
-    const includeDeps = complexity >= 4;
-    const includeTests = complexity >= 7;
-
     let used = 0;
     const loaded = new Set();
     const output = [];
 
-    // Score each module by keyword hits against the prompt
+    // BM25 module scoring — replaces binary keyword hit count.
+    // Uses pre-computed IDF from index.bm25 so rare/discriminative keywords
+    // score higher than common ones. Partial matching: term "modal" hits keyword
+    // "modaldialog" and vice versa, capturing synonyms keyword expansion missed.
+    const bm25 = index.bm25 || null;
+    const N = index.modules.length;
+
+    function extractTerms(text) {
+      return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((t) => t.length >= 4);
+    }
+
+    function scoreBM25(keywords, queryTerms, idf, avgdl) {
+      const k1 = 1.5, b = 0.75;
+      const dl = keywords.length || 1;
+      let score = 0;
+      for (const term of queryTerms) {
+        // Collect matching keywords using prefix/suffix only (not arbitrary infix).
+        // IDF is keyed by keyword — look it up on the matched keyword, not the query term,
+        // so TF and IDF live in the same token space.
+        const matchingKws = [];
+        for (const kw of keywords) {
+          if (kw === term ||
+              (term.length >= 4 && (kw.startsWith(term) || kw.endsWith(term))) ||
+              (kw.length >= 4 && (term.startsWith(kw) || term.endsWith(kw)))) {
+            matchingKws.push(kw);
+          }
+        }
+        if (matchingKws.length === 0) continue;
+        const tf = matchingKws.length;
+        // Use highest IDF among matched keywords (rarest = most discriminative)
+        let bestIdf = 0;
+        for (const kw of matchingKws) {
+          const v = idf[kw];
+          if (v !== undefined && v > bestIdf) bestIdf = v;
+        }
+        if (bestIdf === 0) continue; // no known IDF — skip rather than guess
+        score += bestIdf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl / avgdl));
+      }
+      return score;
+    }
+
+    const queryTerms = extractTerms(safePrompt);
+
     const scored = index.modules.map((mod) => {
-      const keywords = mod.keywords || [];
-      const hits = keywords.filter((k) => safePrompt.includes(k.toLowerCase()));
-      return { mod, hits: hits.length, complexity: mod.complexity || 0 };
+      const keywords = (mod.keywords || []).map((k) => k.toLowerCase());
+      let score;
+      if (bm25 && queryTerms.length > 0) {
+        score = scoreBM25(keywords, queryTerms, bm25.idf, bm25.avgdl);
+      } else {
+        // Fallback: binary hit count (no bm25 params in old index)
+        score = keywords.filter((k) => safePrompt.includes(k)).length;
+      }
+      return { mod, score, complexity: mod.complexity || 0 };
     })
-    .filter((s) => s.hits > 0)
-    .sort((a, b) => b.hits - a.hits || b.complexity - a.complexity);
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score || b.complexity - a.complexity);
+
+    // Gate injection budget on retrieval confidence.
+    // If the top BM25 score is weak (< 1.5), the match is speculative — use a
+    // small budget so we don't flood a large-repo agent with irrelevant contracts.
+    // Strong match (≥ 3.0) unlocks the full budget regardless of prompt complexity.
+    const topScore = scored.length > 0 ? scored[0].score : 0;
+    const confidenceMultiplier = topScore >= 3.0 ? 1.0 : topScore >= 1.5 ? 0.6 : 0.3;
+    const basebudget = complexity <= 3 ? 1500 : complexity <= 6 ? 5000 : 9000;
+    const budget = Math.round(basebudget * confidenceMultiplier);
+    const includeDeps = complexity >= 7 && topScore >= 2.0;
+    const includeTests = complexity >= 7 && topScore >= 2.0;
 
     // Helper: load related modules (dependencies or dependents) from a contract.
     // Parses the YAML list under the "field:" header line-by-line — avoids RegExp
@@ -278,7 +332,9 @@ process.stdin.on("end", () => {
     }
 
     if (output.length > 0) {
-      process.stdout.write(output.join("\\n---\\n"));
+      const moduleNames = scored.slice(0, loaded.size).map((s) => s.mod.dir);
+      const header = "# briefed: injected " + moduleNames.length + " module(s) — " + moduleNames.join(", ") + "\\n";
+      process.stdout.write(header + output.join("\\n---\\n"));
     }
   } catch {
     // Fail silently
