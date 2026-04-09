@@ -358,12 +358,33 @@ function applyArmState(
           `This arm cannot exercise briefed's context surface — aborting to avoid misleading bench numbers.`,
       );
     }
+
+    // Register the briefed MCP server in the corpus settings so the agent can
+    // call briefed_routes, briefed_symbol, briefed_issue_candidates, etc.
+    // Without this the index exists but no tool exposes it to the agent.
+    registerBriefedMcp(corpusPath, join(import.meta.dirname, "..", "cli.js"));
   }
 
   // 4. Sanity: if arm requires serena, it must still be visible after setup
   if (arm.serena && !isMcpServerRegistered(claudePath, corpusPath, "serena")) {
     throw new Error("serena required by this arm but not registered after setup");
   }
+}
+
+function registerBriefedMcp(corpusPath: string, cliPath: string): void {
+  const settingsPath = join(corpusPath, ".claude", "settings.json");
+  let parsed: Record<string, unknown> = {};
+  if (existsSync(settingsPath)) {
+    try { parsed = JSON.parse(readFileSync(settingsPath, "utf-8")); } catch { parsed = {}; }
+  }
+  const servers = (parsed.mcpServers as Record<string, unknown> | undefined) || {};
+  servers.briefed = {
+    command: process.execPath,
+    args: [cliPath, "mcp", "--repo", corpusPath],
+  };
+  parsed.mcpServers = servers;
+  mkdirSync(join(corpusPath, ".claude"), { recursive: true });
+  writeFileSync(settingsPath, JSON.stringify(parsed, null, 2) + "\n");
 }
 
 function toggleSerenaInSettings(corpusPath: string, enable: boolean): void {
