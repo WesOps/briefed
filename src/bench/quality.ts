@@ -165,12 +165,17 @@ export async function runQualityBench(opts: QualityOptions): Promise<QualityCell
     }
   }
 
-  // Cost optimization: persist briefed's deep-cache.json across arms.
+  // Cost optimization: persist briefed's deep-cache.json across arms AND runs.
   // Without this, every deep arm pays the full ~$1-2 + ~150s LLM annotation
-  // cost from scratch. With this, the first deep arm in a run pays full price
-  // and every subsequent deep arm reads the cache and short-circuits — the
-  // corpus source is the same across arms, so the cache is valid.
+  // cost from scratch. With this, the first deep arm ever pays full price;
+  // subsequent arms and re-runs of the bench short-circuit on cache hits.
+  // The cache is keyed to corpus source content so it stays valid as long as
+  // the corpus files don't change.
+  const persistedDeepCachePath = join(outputDir, "deep-cache.json");
   let cachedDeepCache: string | null = null;
+  if (existsSync(persistedDeepCachePath)) {
+    try { cachedDeepCache = readFileSync(persistedDeepCachePath, "utf-8"); } catch { /* ignore */ }
+  }
 
   try {
     for (const arm of arms) {
@@ -187,6 +192,8 @@ export async function runQualityBench(opts: QualityOptions): Promise<QualityCell
             if (existsSync(freshCachePath)) {
               try {
                 cachedDeepCache = readFileSync(freshCachePath, "utf-8");
+                // Persist to output dir so the next bench run can reuse it
+                writeFileSync(persistedDeepCachePath, cachedDeepCache);
               } catch { /* keep previous */ }
             }
           }
