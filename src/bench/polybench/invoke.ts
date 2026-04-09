@@ -89,6 +89,7 @@ export function runClaudeOnTask(
       prompt,
       "--output-format",
       "stream-json",
+      "--verbose",
       "--max-turns",
       String(opts.maxTurns),
       "--permission-mode",
