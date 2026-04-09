@@ -93,9 +93,11 @@ const AUTH_PATH_RE = /auth|login|logout|session|signup|register|password|token|o
 const AUTH_FILE_RE = /(?:auth|session|login|password|user|token|oauth|credential)/i;
 
 /**
- * Build an auth context artifact: auth routes, key auth files, session tables.
- * Heuristic-based — not a full trace, but gives the agent the right starting
- * points for "how does auth work?" questions without file exploration.
+ * Build an auth context artifact: auth routes, traced call chain 2 levels
+ * deep from each handler, key auth files, session tables.
+ *
+ * The trace is static (based on sym.calls) so it's best-effort — dynamic
+ * dispatch and framework magic won't show up, but direct function calls will.
  */
 function buildAuthContext(
   routes: Route[],
@@ -116,14 +118,51 @@ function buildAuthContext(
 
   if (authRoutes.length === 0 && authFiles.length === 0) return null;
 
+  // Build a name → symbol lookup for call tracing
+  const symByName = new Map<string, { file: string; desc: string | null }>();
+  for (const e of extractions) {
+    for (const s of e.symbols) {
+      if (s.exported) {
+        symByName.set(s.name.split(".").pop()!, { file: e.path, desc: s.description ?? null });
+      }
+    }
+  }
+
+  // Build a symbol → calls map for 2-level tracing
+  const symCalls = new Map<string, string[]>();
+  for (const e of extractions) {
+    for (const s of e.symbols) {
+      if (s.calls && s.calls.length > 0) {
+        symCalls.set(s.name.split(".").pop()!, s.calls.map((c) => c.split(".").pop()!));
+      }
+    }
+  }
+
+  function traceHandler(handler: string, depth: number): string[] {
+    if (depth === 0) return [];
+    const calls = symCalls.get(handler) ?? [];
+    const lines: string[] = [];
+    for (const callee of calls.slice(0, 6)) {
+      const info = symByName.get(callee);
+      const loc = info ? ` (\`${info.file}\`)` : "";
+      const desc = info?.desc ? ` — ${info.desc}` : "";
+      lines.push(`  ${"  ".repeat(2 - depth)}→ \`${callee}\`${loc}${desc}`);
+      lines.push(...traceHandler(callee, depth - 1));
+    }
+    return lines;
+  }
+
   const lines: string[] = ["# Authentication Context"];
 
   if (authRoutes.length > 0) {
-    lines.push("", "## Auth Routes");
+    lines.push("", "## Auth Routes & Call Traces");
     for (const r of authRoutes) {
-      const handler = r.handler !== "default" ? ` → \`${r.handler}\`` : "";
       const auth = r.auth ? ` [${r.auth}]` : "";
-      lines.push(`- **${r.method}** \`${r.path}\`${handler}${auth} — \`${r.file}\``);
+      lines.push(`- **${r.method}** \`${r.path}\`${auth} — \`${r.file}\``);
+      if (r.handler !== "default") {
+        lines.push(`  handler: \`${r.handler}\``);
+        lines.push(...traceHandler(r.handler, 2));
+      }
     }
   }
 
@@ -132,7 +171,7 @@ function buildAuthContext(
     for (const e of authFiles.slice(0, 20)) {
       const exportedFns = e.symbols
         .filter((s) => s.exported && ["function", "method"].includes(s.kind))
-        .slice(0, 4)
+        .slice(0, 5)
         .map((s) => {
           const name = s.name.split(".").pop()!;
           return s.description ? `\`${name}\` — ${s.description}` : `\`${name}\``;
