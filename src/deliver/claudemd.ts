@@ -29,16 +29,19 @@ export function generateBreadcrumb(): string {
   return [
     "# Project context",
     "",
-    "briefed-generated context for this repo. Read on demand:",
+    "briefed is installed. Prefer these MCP tools over Read/Grep for codebase navigation:",
     "",
+    "- `briefed_issue_candidates` — **call first** on any new task: finds relevant files from the index",
+    "- `briefed_symbol` — look up any function/class/type by name (faster than Grep)",
+    "- `briefed_routes` — all API routes instantly (no need to read route files)",
+    "- `briefed_schema` — all DB models instantly (no need to read schema files)",
+    "- `briefed_find_usages` — all call sites for a symbol (faster than Grep)",
+    "- `briefed_blast_radius` — transitive dependents of a file before refactoring",
+    "- `briefed_test_map` — find the test file for any source file",
+    "",
+    "Static context (read on demand if MCP tools are unavailable):",
     "- `.briefed/skeleton.md` — full file tree, symbols, dep graph, schema, routes, env vars",
-    "- `.briefed/contracts/` — per-module behavioral contracts (one file per top-level dir)",
-    "- `.claude/rules/briefed-deep-*.md` — path-scoped behavioral annotations that",
-    "  Claude Code auto-loads when you touch files matching their globs — no explicit read needed",
-    "",
-    "The skeleton covers structural questions; contracts cover behavioral questions.",
-    "Don't read these unless your current task needs them — the SessionStart hook",
-    "(if briefed installed it) already re-injects the skeleton on session start.",
+    "- `.briefed/contracts/` — per-module behavioral contracts",
   ].join("\n");
 }
 

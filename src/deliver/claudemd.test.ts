@@ -20,8 +20,10 @@ describe("generateBreadcrumb", () => {
     expect(breadcrumb).toContain(".briefed/contracts/");
   });
 
-  it("mentions the path-scoped deep rules", () => {
-    expect(breadcrumb).toContain(".claude/rules/briefed-deep-");
+  it("advertises the MCP tools so agents prefer them over Read/Grep", () => {
+    expect(breadcrumb).toContain("briefed_issue_candidates");
+    expect(breadcrumb).toContain("briefed_symbol");
+    expect(breadcrumb).toContain("briefed_routes");
   });
 
   it("does not include the actual skeleton content (it's a breadcrumb)", () => {

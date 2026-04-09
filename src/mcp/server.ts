@@ -8,6 +8,7 @@ import { routeDetail } from "./route-detail.js";
 import { symbolLookup } from "./symbol-lookup.js";
 import { findUsages } from "./find-usages.js";
 import { issueCandidates } from "./issue-candidates.js";
+import { testMap } from "./test-map.js";
 
 export async function startMcpServer(repoPath: string) {
   const root = resolve(repoPath);
@@ -18,22 +19,22 @@ export async function startMcpServer(repoPath: string) {
   });
 
   server.tool(
-    "briefed_blast_radius",
-    "Show what files, routes, and models are affected by changing a file. Uses BFS over the dependency graph to find all transitive dependents.",
-    { file: z.string().describe("File path relative to repo root (e.g. src/auth/session.ts)") },
-    async ({ file }) => blastRadius(root, file),
+    "briefed_issue_candidates",
+    "CALL THIS FIRST on any new task. Given a bug report or task description, returns the top candidate files using keyword matching against pre-indexed symbol names, signatures, and descriptions. Much faster than Grep — use it before exploring the codebase.",
+    { issue: z.string().describe("The issue, bug report, or task description") },
+    async ({ issue }) => issueCandidates(root, issue),
   );
 
   server.tool(
-    "briefed_schema",
-    "Look up database models, their fields, types, relations, and constraints. Query by model name or list all models.",
-    { model: z.string().optional().describe("Model name to look up (omit to list all models)") },
-    async ({ model }) => schemaLookup(root, model),
+    "briefed_symbol",
+    "Look up any function, class, type, or interface by name. Returns signature, behavioral description, callers, dependencies, and test coverage. Use instead of Grep when you know the symbol name.",
+    { name: z.string().describe("Symbol name (e.g. createUserSession, DepGraph, buildDepGraph)") },
+    async ({ name }) => symbolLookup(root, name),
   );
 
   server.tool(
     "briefed_routes",
-    "Look up API routes with their handlers, middleware, and file locations. Filter by method or path pattern.",
+    "List all API routes with handlers, middleware, and file locations. Use instead of reading route files — returns all routes instantly from the pre-built index.",
     {
       method: z.string().optional().describe("HTTP method filter (GET, POST, PUT, DELETE)"),
       path: z.string().optional().describe("Path pattern to match (e.g. /api/users, /auth)"),
@@ -42,24 +43,31 @@ export async function startMcpServer(repoPath: string) {
   );
 
   server.tool(
-    "briefed_symbol",
-    "Look up a function, class, type, or interface by name. Shows signature, description, which files import it, dependencies, test coverage, and importance ranking.",
-    { name: z.string().describe("Symbol name to look up (e.g. extractFile, DepGraph, buildDepGraph)") },
-    async ({ name }) => symbolLookup(root, name),
+    "briefed_schema",
+    "List all database models with fields, types, relations, and constraints. Use instead of reading the schema file.",
+    { model: z.string().optional().describe("Model name (omit to list all)") },
+    async ({ model }) => schemaLookup(root, model),
   );
 
   server.tool(
     "briefed_find_usages",
-    "Find every call site of a symbol with file, line number, and the matching line of context. Scoped to files that actually import the symbol, so it's much faster and higher-signal than blanket grep. Use this instead of grepping when you need to know who calls a function before changing it.",
-    { name: z.string().describe("Exact symbol name to find usages of (case-sensitive)") },
+    "Find every call site of a symbol with file and line number. Scoped to importing files — much faster and higher-signal than Grep. Use before changing a function to see who calls it.",
+    { name: z.string().describe("Exact symbol name (case-sensitive)") },
     async ({ name }) => findUsages(root, name),
   );
 
   server.tool(
-    "briefed_issue_candidates",
-    "Given a bug report or issue description, find the most likely relevant files using keyword matching against symbol names, signatures, and descriptions. Call this first when starting a new task to narrow down where to look before exploring the codebase.",
-    { issue: z.string().describe("The issue description, bug report, or task description to search for") },
-    async ({ issue }) => issueCandidates(root, issue),
+    "briefed_blast_radius",
+    "Show all files transitively affected by changing a file, using BFS over the dependency graph. Use before a refactor to understand the full impact.",
+    { file: z.string().describe("File path relative to repo root (e.g. src/auth/session.ts)") },
+    async ({ file }) => blastRadius(root, file),
+  );
+
+  server.tool(
+    "briefed_test_map",
+    "Look up which test file covers a source file, with test names and count. Use instead of Glob when you need to find or run tests for a file.",
+    { file: z.string().optional().describe("Source file path (omit to list all mappings)") },
+    async ({ file }) => testMap(root, file),
   );
 
   const transport = new StdioServerTransport();
