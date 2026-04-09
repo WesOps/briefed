@@ -20,7 +20,7 @@ export async function startMcpServer(repoPath: string) {
 
   server.tool(
     "briefed_issue_candidates",
-    "CALL THIS FIRST on any new task. Given a bug report or task description, returns the top candidate files using keyword matching against pre-indexed symbol names, signatures, and descriptions. Much faster than Grep — use it before exploring the codebase.",
+    "Given a bug report or task description, returns the top candidate files using keyword matching against pre-indexed symbol names, signatures, and descriptions. Useful for narrowing down where to look before exploring.",
     { issue: z.string().describe("The issue, bug report, or task description") },
     async ({ issue }) => issueCandidates(root, issue),
   );
