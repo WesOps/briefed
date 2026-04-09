@@ -6,6 +6,7 @@ import { detectMonorepo } from "../extract/monorepo.js";
 import { runExtractionPipeline } from "../extract/pipeline.js";
 import { generateSkeleton, adaptiveSkeletonOptions } from "../generate/skeleton.js";
 import { generateModuleIndex, writeModuleIndex, generateSimpleContracts } from "../generate/index-file.js";
+import { generateArtifacts } from "../generate/artifacts.js";
 import { formatConventions } from "../extract/conventions.js";
 import { formatSchemas } from "../extract/schema.js";
 import { formatRoutes } from "../extract/routes.js";
@@ -120,6 +121,9 @@ export async function initCommand(opts: InitOptions) {
     enrichedSkeleton =
       `## System overview\n\n${deepSystemOverview}\n\n${enrichedSkeleton}`;
   }
+
+  // Step 6.5: Generate task-native artifacts for hook injection
+  generateArtifacts(root, result.extractions, result.envVars, result.routes, result.schemas);
 
   // Step 7: Write all outputs
   const outputSummary = writeOutputs(root, result, enrichedSkeleton, {

@@ -10,6 +10,7 @@ import { findUsages } from "./find-usages.js";
 import { issueCandidates } from "./issue-candidates.js";
 import { testMap } from "./test-map.js";
 import { contextSearch } from "./context-search.js";
+import { envAudit } from "./env-audit.js";
 
 export async function startMcpServer(repoPath: string) {
   const root = resolve(repoPath);
@@ -24,6 +25,13 @@ export async function startMcpServer(repoPath: string) {
     "Search the pre-indexed codebase for modules relevant to your current task. Returns module contracts (exports, dependencies, call graph) for the best-matching directories. Call this at the start of any task to orient without reading files, or mid-task when you need context about a specific subsystem.",
     { query: z.string().describe("Natural language description of what you're working on (e.g. 'modal focus trap accessibility', 'authentication session handling', 'API rate limiting')") },
     async ({ query }) => contextSearch(root, query),
+  );
+
+  server.tool(
+    "briefed_env_audit",
+    "List every environment variable the app reads — name, required/optional, category (database/auth/api/services/config), and which files consume it. Use instead of grepping for process.env.",
+    {},
+    async () => envAudit(root),
   );
 
   server.tool(

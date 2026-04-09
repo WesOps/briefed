@@ -125,6 +125,7 @@ const briefedDir = resolve(join(__dirname, ".."));
 const contractsDir = join(briefedDir, "contracts");
 const indexPath = join(briefedDir, "index.json");
 const testMapPath = join(briefedDir, "test-map.json");
+const artifactsDir = join(briefedDir, "artifacts");
 
 // Security: verify a path is inside .briefed/ before reading
 const realBriefedDir = realpathSync(briefedDir);
@@ -185,8 +186,41 @@ process.stdin.on("end", () => {
       return;
     }
 
+    // Task classifier — inject pre-built artifacts for known query types.
+    // Fires before BM25 so task-native answers arrive without module retrieval.
+    const TASK_CLASSIFIERS = [
+      {
+        patterns: [/\\benv\\b/i, /environment variable/i, /\\.env/i, /\\bDATABASE_URL\\b/, /\\bSESSION_SECRET\\b/, /\\bconfig\\b.*(?:var|key|secret)/i, /what.*(?:env|variable|secret)/i],
+        artifact: "env-audit.md",
+        label: "env-audit",
+      },
+      {
+        patterns: [/\\blogin\\b/i, /\\bauth(?:entication|oriz)/i, /\\bsession\\b/i, /\\bjwt\\b/i, /\\boauth\\b/i, /\\bsignup\\b/i, /\\bpassword\\b/i, /how.*(?:auth|login|user.*log)/i, /trace.*login/i],
+        artifact: "auth-context.md",
+        label: "auth-context",
+      },
+    ];
+
+    const artifactOutputs = [];
+    for (const classifier of TASK_CLASSIFIERS) {
+      if (classifier.patterns.some((p) => p.test(safePrompt))) {
+        const artifactPath = join(artifactsDir, classifier.artifact);
+        const content = safeExists(artifactPath) ? safeRead(artifactPath) : null;
+        if (content) {
+          artifactOutputs.push({ label: classifier.label, content });
+        }
+      }
+    }
+
     const index = JSON.parse(safeRead(indexPath) || "{}");
-    if (!index.modules) { process.exit(0); return; }
+    if (!index.modules) {
+      if (artifactOutputs.length > 0) {
+        const header = "# briefed: injected " + artifactOutputs.map((a) => a.label).join(", ") + "\\n";
+        process.stdout.write(header + artifactOutputs.map((a) => a.content).join("\\n---\\n"));
+      }
+      process.exit(0);
+      return;
+    }
     const complexity = scorePrompt(safePrompt);
 
     let used = 0;
@@ -331,10 +365,16 @@ process.stdin.on("end", () => {
       }
     }
 
-    if (output.length > 0) {
+    const allParts = [
+      ...artifactOutputs.map((a) => a.content),
+      ...output,
+    ];
+    if (allParts.length > 0) {
+      const artifactLabels = artifactOutputs.map((a) => a.label);
       const moduleNames = scored.slice(0, loaded.size).map((s) => s.mod.dir);
-      const header = "# briefed: injected " + moduleNames.length + " module(s) — " + moduleNames.join(", ") + "\\n";
-      process.stdout.write(header + output.join("\\n---\\n"));
+      const allLabels = [...artifactLabels, ...moduleNames].join(", ");
+      const header = "# briefed: injected " + allLabels + "\\n";
+      process.stdout.write(header + allParts.join("\\n---\\n"));
     }
   } catch {
     // Fail silently
