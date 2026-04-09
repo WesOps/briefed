@@ -75,23 +75,33 @@ export function generateModuleIndex(
       }
     }
 
-    // Keywords from LLM-generated symbol descriptions (deep analysis).
-    // Descriptions like "Validates YAML config and merges defaults" add
-    // semantic keywords ("yaml", "validates", "merges") that structural
-    // names alone never capture — this is what makes hook matching useful
-    // on real GitHub issue prompts.
+    // Keywords from LLM-generated descriptions on exported symbols only.
+    // Restricted to exported symbols (the public API) to avoid noise from
+    // internal helpers. Min length 5 + extended stop list keeps keywords
+    // specific enough to signal real topic overlap without false-positive
+    // matches on generic English words.
     const descStopWords = new Set([
       "and", "the", "for", "from", "with", "that", "this", "when",
       "are", "has", "its", "not", "can", "will", "all", "any", "via",
       "used", "uses", "each", "into", "over", "per", "was", "been",
       "than", "also", "only", "then", "both", "more", "some", "such",
+      "given", "based", "build", "built", "call", "calls", "load",
+      "loads", "read", "reads", "write", "writes", "gets", "sets",
+      "runs", "returns", "result", "results", "value", "values",
+      "data", "file", "files", "path", "paths", "name", "names",
+      "list", "array", "object", "string", "number", "boolean",
+      "type", "types", "true", "false", "null", "node", "line",
+      "text", "code", "item", "items", "entry", "entries", "field",
+      "fields", "found", "find", "finds", "check", "checks", "pass",
+      "fail", "fails", "make", "makes", "take", "takes", "like",
+      "after", "before", "where", "which", "their", "there", "have",
     ]);
     for (const f of files) {
-      for (const sym of f.symbols) {
+      for (const sym of f.symbols.filter((s) => s.exported)) {
         if (!sym.description) continue;
         for (const word of sym.description.split(/[^a-zA-Z]+/)) {
           const w = word.toLowerCase();
-          if (w.length > 3 && !descStopWords.has(w)) keywords.add(w);
+          if (w.length >= 5 && !descStopWords.has(w)) keywords.add(w);
         }
       }
     }
