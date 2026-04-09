@@ -70,6 +70,8 @@ export function runExtractionPipeline(
   // Extract signatures and imports from each file (with caching)
   console.log("  Extracting signatures...");
   const extractions: FileExtraction[] = [];
+  // Keep file content for non-cached files so complexity scoring can reuse it
+  const fileContentMap = new Map<string, string>();
   let extractErrors = 0;
   let cacheHits = 0;
 
@@ -86,9 +88,10 @@ export function runExtractionPipeline(
         continue;
       }
 
-      const extraction = extractFile(file.absolutePath, root);
+      const extraction = extractFile(file.absolutePath, root, content);
       extraction.path = file.path; // use relative path
       extractions.push(extraction);
+      fileContentMap.set(file.path, content);
 
       // Store in cache
       cache[file.path] = { hash, extraction };
@@ -127,7 +130,7 @@ export function runExtractionPipeline(
   const complexityScores: ComplexityScore[] = [];
   for (const ext of extractions) {
     try {
-      const score = computeComplexity(ext, depGraph, root);
+      const score = computeComplexity(ext, depGraph, root, fileContentMap.get(ext.path));
       complexityScores.push(score);
     } catch (e) {
       debug(`complexity scoring failed for ${ext.path}: ${(e as Error).message}`);

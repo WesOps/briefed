@@ -73,16 +73,16 @@ const LANGUAGE_EXTRACTORS: Record<string, LanguageExtractor> = {
 /** Extensions that support AST extraction via the TS compiler API */
 const AST_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 
-export function extractFile(filePath: string, _rootPath: string): FileExtraction {
+export function extractFile(filePath: string, _rootPath: string, content?: string): FileExtraction {
   const ext = extname(filePath);
 
   // Try AST extraction first for TS/JS files (higher accuracy)
   if (AST_EXTENSIONS.has(ext)) {
-    const astResult = extractWithAst(filePath);
+    const astResult = extractWithAst(filePath, content);
     if (astResult && astResult.symbols.length > 0) {
       // AST succeeded — still add JSDoc descriptions via line scanning
-      const content = readFileSync(filePath, "utf-8");
-      const lines = content.split("\n");
+      const fileContent = content ?? readFileSync(filePath, "utf-8");
+      const lines = fileContent.split("\n");
       for (const sym of astResult.symbols) {
         if (!sym.description) {
           sym.description = extractDescription(lines, sym.line - 1);
@@ -94,8 +94,8 @@ export function extractFile(filePath: string, _rootPath: string): FileExtraction
   }
 
   // Regex fallback (always works, lower accuracy)
-  const content = readFileSync(filePath, "utf-8");
-  const lines = content.split("\n");
+  const fileContent = content ?? readFileSync(filePath, "utf-8");
+  const lines = fileContent.split("\n");
 
   const result: FileExtraction = {
     path: filePath,
@@ -105,7 +105,7 @@ export function extractFile(filePath: string, _rootPath: string): FileExtraction
   };
 
   const extractor = LANGUAGE_EXTRACTORS[ext] || extractGeneric;
-  extractor(content, lines, result);
+  extractor(fileContent, lines, result);
 
   // Post-process: set defaults and add descriptions
   for (const sym of result.symbols) {

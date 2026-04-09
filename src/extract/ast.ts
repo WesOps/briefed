@@ -6,12 +6,13 @@ import type { FileExtraction, Symbol, SymbolKind, ImportRef } from "./signatures
  * AST-based extraction for TypeScript/JavaScript files using the TS compiler API.
  * Returns null if parsing fails (caller should fall back to regex).
  */
-export function extractWithAst(filePath: string): FileExtraction | null {
-  let content: string;
-  try {
-    content = readFileSync(filePath, "utf-8");
-  } catch {
-    return null;
+export function extractWithAst(filePath: string, content?: string): FileExtraction | null {
+  if (content === undefined) {
+    try {
+      content = readFileSync(filePath, "utf-8");
+    } catch {
+      return null;
+    }
   }
 
   const sourceFile = ts.createSourceFile(

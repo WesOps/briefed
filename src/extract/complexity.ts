@@ -21,11 +21,14 @@ export function computeComplexity(
   extraction: FileExtraction,
   depGraph: DepGraph,
   root = "",
+  content?: string,
 ): ComplexityScore {
   // extraction.path may be relative (set by pipeline after extraction).
   // Resolve against root so --repo /other/path doesn't silently fail.
-  const fullPath = isAbsolute(extraction.path) ? extraction.path : join(root, extraction.path);
-  const content = readFileSync(fullPath, "utf-8");
+  if (content === undefined) {
+    const fullPath = isAbsolute(extraction.path) ? extraction.path : join(root, extraction.path);
+    content = readFileSync(fullPath, "utf-8");
+  }
 
   const fanOut = extraction.imports.filter((i) => i.isRelative).length;
   const node = depGraph.nodes.get(
