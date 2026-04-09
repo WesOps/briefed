@@ -166,6 +166,17 @@ export async function runDeepAnalysis(
     .sort((a, b) => scoreFile(b, depGraph, complexityMap, gitSignals, testedFiles) - scoreFile(a, depGraph, complexityMap, gitSignals, testedFiles))
     .slice(0, maxFilesToAnnotate(extractions.length));
 
+  // Build score map for tier-aware prompting. Candidates are sorted
+  // descending so rank position directly encodes importance.
+  const scoreMap = new Map<string, number>();
+  for (const ext of candidates) {
+    scoreMap.set(ext.path, scoreFile(ext, depGraph, complexityMap, gitSignals, testedFiles));
+  }
+  // Thresholds: top 20% = critical, bottom 20% = peripheral, rest = normal.
+  const sortedScores = [...scoreMap.values()].sort((a, b) => b - a);
+  const criticalCutoff = sortedScores[Math.floor(sortedScores.length * 0.2)] ?? 0;
+  const peripheralCutoff = sortedScores[Math.floor(sortedScores.length * 0.8)] ?? 0;
+
   if (candidates.length === 0) {
     console.log("  [deep] nothing to annotate (all exported symbols already documented)");
     return { ...empty, ran: true };
@@ -201,7 +212,7 @@ export async function runDeepAnalysis(
   // Batch-annotate the misses
   for (let i = 0; i < misses.length; i += BATCH_SIZE) {
     const batch = misses.slice(i, i + BATCH_SIZE);
-    const prompt = buildBatchPrompt(batch, root);
+    const prompt = buildBatchPrompt(batch, root, scoreMap, criticalCutoff, peripheralCutoff);
     if (!prompt) continue;
 
     const raw = runClaudeJson(claudePath, prompt, root);
@@ -520,7 +531,13 @@ function hashFileForCache(content: string, symbols: Symbol[]): string {
   return hashString(content + "\u0000" + names);
 }
 
-function buildBatchPrompt(batch: FileExtraction[], root: string): string | null {
+function buildBatchPrompt(
+  batch: FileExtraction[],
+  root: string,
+  scoreMap?: Map<string, number>,
+  criticalCutoff?: number,
+  peripheralCutoff?: number,
+): string | null {
   const sections: string[] = [];
   for (const ext of batch) {
     const content = safeRead(join(root, ext.path));
@@ -535,25 +552,39 @@ function buildBatchPrompt(batch: FileExtraction[], root: string): string | null 
     if (needsDesc.length === 0) continue;
 
     const relevant = sliceRelevantLines(content, needsDesc);
+
+    // Compute depth tier for this file based on its blended importance score.
+    // Critical files get richer prompts; peripheral files stay terse.
+    const score = scoreMap?.get(ext.path) ?? 0;
+    let depthHint: string;
+    if (criticalCutoff !== undefined && score >= criticalCutoff) {
+      depthHint = "[DEPTH:thorough — up to 22 words: behavior + failure modes + required state]";
+    } else if (peripheralCutoff !== undefined && score < peripheralCutoff) {
+      depthHint = "[DEPTH:brief — up to 7 words: terse one-liner only]";
+    } else {
+      depthHint = "[DEPTH:normal — up to 13 words: what it does]";
+    }
+
     sections.push(
-      `FILE: ${ext.path}\nSYMBOLS: ${needsDesc.map((s) => s.name).join(", ")}\nCODE:\n${relevant}`,
+      `FILE: ${ext.path} ${depthHint}\nSYMBOLS: ${needsDesc.map((s) => s.name).join(", ")}\nCODE:\n${relevant}`,
     );
   }
 
   if (sections.length === 0) return null;
 
-  return `Analyze these source files. For each listed symbol, write ONE short behavioral description (max 14 words).
+  return `Analyze these source files. For each listed symbol, write ONE behavioral description matching its file's DEPTH hint.
 
-Focus on: WHAT it does, SIDE EFFECTS (DB writes, events, I/O, mutations), and CONSTRAINTS (guards, required state, throws).
-
-Good: "creates draft invoice, validates project active, emits InvoiceCreated"
-Good: "hashes password with bcrypt 12 rounds, throws on empty input"
-Bad: "handles invoice logic" (too vague)
-Bad: "main service function" (says nothing)
+DEPTH:thorough — up to 22 words. Include: what it does, side effects (DB writes/events/mutations), failure modes, required state.
+  Good: "creates draft invoice, validates project active, emits InvoiceCreated, throws if quota exceeded"
+DEPTH:normal — up to 13 words. Include: what it does and key behaviors.
+  Good: "hashes password with bcrypt 12 rounds, throws on empty input"
+DEPTH:brief — up to 7 words. Terse one-liner only.
+  Good: "formats currency with locale rounding"
+Bad (any tier): "handles invoice logic" / "main service function" (too vague)
 
 Respond with a JSON object mapping "filepath::symbolName" to the description string. No prose, no markdown, just the JSON object on a single line or pretty-printed. Example:
 
-{"src/foo.ts::createInvoice": "creates draft invoice, validates project active, emits InvoiceCreated", "src/foo.ts::deleteInvoice": "soft-deletes invoice, requires admin role, emits InvoiceDeleted"}
+{"src/foo.ts::createInvoice": "creates draft invoice, validates project active, emits InvoiceCreated", "src/foo.ts::deleteInvoice": "soft-deletes invoice, requires admin role"}
 
 ${sections.join("\n---\n")}`;
 }
