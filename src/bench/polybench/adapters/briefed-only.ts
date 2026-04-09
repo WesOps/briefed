@@ -7,7 +7,7 @@
  * assistance. The comparison target is serena-only and briefed-and-serena.
  */
 
-import { spawnSync } from "child_process";
+import { spawn } from "child_process";
 import { existsSync, copyFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import type { PolyAdapter, AdapterOptions } from "../types.js";
@@ -26,21 +26,32 @@ export const briefedOnlyAdapter: PolyAdapter = {
       copyFileSync(opts.deepCachePath, join(briefedDir, "deep-cache.json"));
     }
 
-    const result = spawnSync(
-      "node",
-      [opts.briefedCliPath, "init", "--deep"],
-      {
-        cwd: repoPath,
-        stdio: "inherit",
-        timeout: opts.timeoutMs,
-      },
-    );
-    if (result.error) {
-      throw new Error(`briefed init failed to spawn: ${result.error.message}`);
-    }
-    if (result.status !== 0) {
-      throw new Error(`briefed init exited with status ${result.status ?? "unknown"}`);
-    }
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(
+        "node",
+        [opts.briefedCliPath, "init", "--deep"],
+        {
+          cwd: repoPath,
+          stdio: "inherit",
+        },
+      );
+      const timer = setTimeout(() => {
+        child.kill("SIGTERM");
+        reject(new Error(`briefed init timed out after ${opts.timeoutMs}ms`));
+      }, opts.timeoutMs);
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        reject(new Error(`briefed init failed to spawn: ${err.message}`));
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          reject(new Error(`briefed init exited with status ${code ?? "unknown"}`));
+        } else {
+          resolve();
+        }
+      });
+    });
 
     // Harvest updated cache back to persistent location for next run
     if (opts.deepCachePath) {
