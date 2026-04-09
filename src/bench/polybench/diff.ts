@@ -88,6 +88,7 @@ export function captureAndFilterDiff(repoPath: string): string {
     stdio: ["pipe", "pipe", "pipe"],
     encoding: "utf-8",
     timeout: 60_000,
+    maxBuffer: 50 * 1024 * 1024, // 50 MB — vscode diffs can be large
   });
   if (result.error) {
     throw new Error(`git diff HEAD failed: ${result.error.message}`);
