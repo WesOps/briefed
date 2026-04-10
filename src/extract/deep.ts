@@ -66,7 +66,7 @@ interface DeepCache {
 const CACHE_VERSION = 2;
 const BATCH_SIZE = 8; // files per claude call
 /** Bump when the prompt template changes in ways that affect annotation quality. */
-const PROMPT_VERSION = "v3-danger-required";
+const PROMPT_VERSION = "v4-callchain";
 
 interface GitSignals {
   /** Number of commits touching this file in the last 12 months. */
@@ -242,7 +242,7 @@ export async function runDeepAnalysis(
   const allBatches: { batch: FileExtraction[]; prompt: string; model: "haiku" | "sonnet" }[] = [];
   for (let i = 0; i < misses.length; i += BATCH_SIZE) {
     const batch = misses.slice(i, i + BATCH_SIZE);
-    const prompt = buildBatchPrompt(batch, root, scoreMap, criticalCutoff, peripheralCutoff, depGraph, testMappings);
+    const prompt = buildBatchPrompt(batch, root, scoreMap, criticalCutoff, peripheralCutoff, depGraph, testMappings, entrypointSeeds);
     if (!prompt) continue;
     const hasCritical = criticalCutoff !== undefined &&
       batch.some(ext => (scoreMap?.get(ext.path) ?? 0) >= criticalCutoff);
@@ -672,6 +672,74 @@ function hashFileForCache(content: string, symbols: Symbol[]): string {
   return hashString(content + "\u0000" + names + "\u0000" + PROMPT_VERSION);
 }
 
+/**
+ * Trace the call chain from an entrypoint down to a symbol.
+ * BFS backward through symbolRefs, stops at entrypoint seeds.
+ * Returns a human-readable chain like:
+ *   POST /login → login.server.ts:loginAction → auth.server.ts:login → THIS
+ */
+function getCallChain(
+  symbolName: string,
+  filePath: string,
+  depGraph: DepGraph,
+  entrypointSeeds: Map<string, number>,
+): string | null {
+  // Walk backward: who imports this file? And who imports that file?
+  const chain: string[] = [`${filePath.split("/").pop()}:${symbolName}`];
+  let currentFile = filePath;
+  const visited = new Set<string>();
+
+  for (let depth = 0; depth < 6; depth++) {
+    visited.add(currentFile);
+    const node = depGraph.nodes.get(currentFile);
+    if (!node || node.inEdges.length === 0) break;
+
+    // If current file is an entrypoint, stop — we've reached the top
+    if (entrypointSeeds.has(currentFile) && depth > 0) break;
+
+    // Pick the highest-PageRank importer (most likely the "main" call path)
+    let bestImporter: string | null = null;
+    let bestRank = -1;
+    for (const importer of node.inEdges) {
+      if (visited.has(importer)) continue;
+      const rank = depGraph.pageRank.get(importer) || 0;
+      if (rank > bestRank) {
+        bestRank = rank;
+        bestImporter = importer;
+      }
+    }
+    if (!bestImporter) break;
+
+    // Find which symbol in the importer references our current file
+    let callerSymbol = "";
+    for (const [key, refs] of depGraph.symbolRefs || []) {
+      if (key.startsWith(currentFile + "#") && refs.includes(bestImporter)) {
+        // The importer references a symbol in currentFile
+        // We want the importer's own symbol that does the calling — harder to get
+        // Just use the file name for now
+        break;
+      }
+    }
+
+    const fname = bestImporter.split("/").pop() || bestImporter;
+    chain.unshift(callerSymbol ? `${fname}:${callerSymbol}` : fname);
+    currentFile = bestImporter;
+  }
+
+  // Only useful if the chain has 2+ links
+  if (chain.length < 2) return null;
+
+  // Mark the entrypoint if it matches a route pattern
+  const topFile = currentFile;
+  if (/route|handler|controller/i.test(topFile)) {
+    chain[0] = `[route] ${chain[0]}`;
+  } else if (entrypointSeeds.has(topFile)) {
+    chain[0] = `[entry] ${chain[0]}`;
+  }
+
+  return chain.join(" → ");
+}
+
 function getCallerContext(
   symbolName: string,
   filePath: string,
@@ -709,6 +777,7 @@ function buildBatchPrompt(
   peripheralCutoff?: number,
   depGraph?: DepGraph,
   testMappings?: TestMapping[],
+  entrypointSeeds?: Map<string, number>,
 ): string | null {
   const sections: string[] = [];
 
@@ -733,11 +802,17 @@ function buildBatchPrompt(
     );
     if (needsDesc.length === 0) continue;
 
-    const relevant = sliceRelevantLines(content, needsDesc);
+    const score = scoreMap?.get(ext.path) ?? 0;
+    const isCritical = criticalCutoff !== undefined && score >= criticalCutoff;
+
+    // Critical files get a wider code window (50 lines vs 25) so the LLM
+    // sees more of the function body — error handling, return paths, edge cases.
+    const relevant = isCritical
+      ? sliceRelevantLines(content, needsDesc, 50)
+      : sliceRelevantLines(content, needsDesc);
 
     // Compute depth tier for this file based on its blended importance score.
     // Critical files get richer prompts; peripheral files stay terse.
-    const score = scoreMap?.get(ext.path) ?? 0;
     let depthHint: string;
     if (criticalCutoff !== undefined && score >= criticalCutoff) {
       depthHint = "[DEPTH:thorough — up to 22 words: behavior + failure modes + required state]";
@@ -748,9 +823,16 @@ function buildBatchPrompt(
     }
 
     let extraContext = "";
-    if (criticalCutoff !== undefined && score >= criticalCutoff && depGraph) {
+    if (isCritical && depGraph) {
       const callerLines: string[] = [];
+      // Call chain: trace from entrypoint → this symbol
       for (const s of needsDesc) {
+        if (entrypointSeeds) {
+          const chain = getCallChain(s.name, ext.path, depGraph, entrypointSeeds);
+          if (chain) {
+            callerLines.push(`CALL CHAIN: ${chain}`);
+          }
+        }
         const ctx = getCallerContext(s.name, ext.path, depGraph, root);
         if (ctx.length > 0) {
           callerLines.push(`CALLERS of ${s.name}:`);
@@ -789,7 +871,7 @@ Return a JSON object mapping "filepath::symbolName" to either:
 
 ## DEPTH tiers
 
-DEPTH:thorough — 1-2 sentences for description. MUST also include a "danger" field (1-2 sentences): what callers depend on, what invariants tests assert, what will break if this function's behavior changes. Look at the CALLERS and TEST sections below the code for evidence.
+DEPTH:thorough — 1-2 sentences for description. MUST also include a "danger" field (1-2 sentences): what callers depend on, what invariants tests assert, what will break if this function's behavior changes. Use the CALL CHAIN, CALLERS, and TEST sections below the code as evidence — they show how this function fits into the system.
   Good: {"description": "creates draft invoice, validates project active, emits InvoiceCreated, throws if quota exceeded", "danger": "billing webhook handler depends on InvoiceCreated event shape and non-null invoice.id; test asserts event emission and id presence"}
   Bad danger: {"danger": "important function"} / {"danger": "callers use this"} — too vague, says nothing actionable
 
@@ -812,12 +894,12 @@ No prose outside the JSON. No markdown fences.
 ${sections.join("\n---\n")}`;
 }
 
-function sliceRelevantLines(content: string, symbols: Symbol[]): string {
+function sliceRelevantLines(content: string, symbols: Symbol[], windowSize = 25): string {
   const lines = content.split("\n");
   const keep = new Set<number>();
   for (const sym of symbols) {
     const start = Math.max(0, sym.line - 2);
-    const end = Math.min(lines.length, sym.line + 25);
+    const end = Math.min(lines.length, sym.line + windowSize);
     for (let i = start; i < end; i++) keep.add(i);
   }
   const sorted = [...keep].sort((a, b) => a - b);
