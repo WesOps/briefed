@@ -67,7 +67,7 @@ export async function initCommand(opts: InitOptions) {
     const deepResult = await runDeepAnalysis(result.extractions, result.depGraph, root, result.complexityScores, result.testMappings);
     if (deepResult.ran && deepResult.annotations.size > 0) {
       deepSystemOverview = deepResult.systemOverview;
-      deepRules = buildDeepRules(result.extractions, deepResult.annotations, deepResult.directoryBoundaries, result.testMappings, result.depGraph);
+      deepRules = buildDeepRules(result.extractions, deepResult.annotations, deepResult.directoryBoundaries, result.testMappings, result.depGraph, deepResult.dangerZones);
       const merged = mergeDeepAnnotations(result.extractions, deepResult.annotations);
       if (merged > 0) {
         updateExtractionCache(root, result.extractions);

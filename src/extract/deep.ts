@@ -360,6 +360,7 @@ export function buildDeepRules(
   directoryBoundaries: Map<string, string> = new Map(),
   testMappings: TestMapping[] = [],
   depGraph?: DepGraph,
+  dangerZones: Map<string, Map<string, string>> = new Map(),
 ): Map<string, string> {
   const rules = new Map<string, string>();
 
@@ -368,6 +369,14 @@ export function buildDeepRules(
   for (const tm of testMappings) {
     if (tm.testNames.length > 0) {
       testNamesByFile.set(tm.sourceFile, tm.testNames.slice(0, 5));
+    }
+  }
+
+  // Map source file path → test assertions (test name → assertion strings)
+  const testAssertionsByFile = new Map<string, Map<string, string[]>>();
+  for (const tm of testMappings) {
+    if (tm.assertions && tm.assertions.size > 0) {
+      testAssertionsByFile.set(tm.sourceFile, tm.assertions);
     }
   }
 
@@ -386,6 +395,7 @@ export function buildDeepRules(
       name: string;
       sig: string;
       desc: string;
+      danger?: string;
       calls?: string[];
       throws?: string[];
       callers?: string[];
@@ -407,10 +417,12 @@ export function buildDeepRules(
         // Callers: look up "filepath#symbolName" in depGraph.symbolRefs
         const callerKey = `${ext.path}#${sym.name}`;
         const callers = callersBySymbol.get(callerKey);
+        const danger = dangerZones.get(ext.path)?.get(sym.name);
         syms.push({
           name: sym.name,
           sig: sym.signature,
           desc,
+          danger,
           calls: sym.calls?.slice(0, 5),
           throws: sym.throws?.slice(0, 5),
           callers: callers?.map(c => c.split("/").pop() || c),
@@ -453,10 +465,26 @@ export function buildDeepRules(
         if (sym.callers && sym.callers.length > 0) {
           lines.push(`  - called by: ${sym.callers.join(", ")}`);
         }
+        if (sym.danger) {
+          lines.push(`  - \u26A0 DANGER: ${sym.danger}`);
+        }
       }
       const testNames = testNamesByFile.get(entry.file);
       if (testNames && testNames.length > 0) {
         lines.push(`- Tests: ${testNames.map(n => `"${n}"`).join(", ")}`);
+        const fileAssertions = testAssertionsByFile.get(entry.file);
+        if (fileAssertions) {
+          const assertionSummary: string[] = [];
+          for (const tName of testNames.slice(0, 3)) {
+            const asserts = fileAssertions.get(tName);
+            if (asserts && asserts.length > 0) {
+              assertionSummary.push(...asserts.slice(0, 2));
+            }
+          }
+          if (assertionSummary.length > 0) {
+            lines.push(`  - expects: ${assertionSummary.join("; ")}`);
+          }
+        }
       }
       lines.push("");
     }

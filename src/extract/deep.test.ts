@@ -246,4 +246,34 @@ describe("buildDeepRules", () => {
     expect(content).toContain("does foo");
     expect(content).not.toContain("bar");
   });
+
+  it("includes danger zone lines for symbols with danger annotations", () => {
+    const ext = makeExt("src/auth/session.ts", [
+      makeSym("createSession", 10, { exported: true, calls: ["validate"] }),
+    ]);
+    const annotations = new Map([
+      ["src/auth/session.ts", new Map([["createSession", "creates user session with JWT"]])],
+    ]);
+    const dangerZones = new Map([
+      ["src/auth/session.ts", new Map([["createSession", "middleware depends on JWT shape; test asserts expiry"]])],
+    ]);
+    const rules = buildDeepRules([ext], annotations, new Map(), [], undefined, dangerZones);
+    const ruleContent = [...rules.values()].find(v => v.includes("session.ts"));
+    expect(ruleContent).toBeDefined();
+    expect(ruleContent).toContain("DANGER:");
+    expect(ruleContent).toContain("middleware depends on JWT shape");
+  });
+
+  it("omits danger line when no danger annotation exists", () => {
+    const ext = makeExt("src/utils/hash.ts", [
+      makeSym("hashPassword", 5, { exported: true }),
+    ]);
+    const annotations = new Map([
+      ["src/utils/hash.ts", new Map([["hashPassword", "hashes with bcrypt"]])],
+    ]);
+    const rules = buildDeepRules([ext], annotations, new Map(), [], undefined, new Map());
+    const ruleContent = [...rules.values()].find(v => v.includes("hash.ts"));
+    expect(ruleContent).toBeDefined();
+    expect(ruleContent).not.toContain("DANGER:");
+  });
 });
