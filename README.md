@@ -4,20 +4,28 @@
 
 briefed scans your repository and produces a layered context snapshot that Claude Code, Cursor, Copilot, and any tool reading `AGENTS.md` load automatically — so the AI starts oriented instead of grepping around.
 
-## Headline (v1.0.0, n=4 paired bench)
+## Headline
 
-On a 4-task paired comparison against [epicweb-dev/epic-stack](https://github.com/epicweb-dev/epic-stack) at a pinned commit:
+**v1.1.0** — danger-zone annotations, test assertion extraction, 9 MCP tools.
+
+### Quality bench (epic-stack, n=4 paired)
 
 | Configuration | Wall time (mean) | Correctness | $/task | Input tokens |
 |---|---|---|---|---|
 | Serena alone | 100s | 5/5 | $0.43 | 874K |
 | **Serena + briefed (with hooks)** | **64s** | **5/5** | **$0.38** | **312K** |
 
-**−36% wall time, equal correctness, ~11% cheaper per prompt.** That ~36 seconds saved on every prompt is the win you'll feel — over a 50-prompt day, that's ~30 minutes back.
+**-36% wall time, equal correctness, ~11% cheaper per prompt.**
 
-The input-token count drops 64% (874K → 312K), but most of the reduction is in *cache-read* tokens which are billed at ~10% of regular input rate, so the dollar savings are more modest (~11%). Output tokens are essentially unchanged across configurations because correctness is identical — the model writes roughly the same answer at the same length.
+### SWE-PolyBench (v1.6, 3 evaluable TypeScript tasks)
 
-**Hooks do most of the work.** The static CLAUDE.md skeleton alone is only ~18% faster than Serena; the adaptive per-prompt context injection pushes the wall-time win to 36%. The plugin install path enables hooks by default — that's the recommended setup. Run `briefed bench --quality --full --arms C,D,G` to reproduce.
+| Task | baseline | briefed-only |
+|---|---|---|
+| mui/material-ui-13828 | Pass | Pass |
+| microsoft/vscode-106767 | Fail | Fail |
+| microsoft/vscode-135805 | **Fail** | **Pass** |
+
+**briefed-only 2/3 vs baseline 1/3.** The vscode-135805 win: adaptive skeleton (200 files) let the model find `multicursor.ts` in 23 turns while baseline hit the 41-turn cap with an empty patch.
 
 ## Install — pick your path
 
@@ -44,7 +52,7 @@ That's it. briefed installs a git post-commit hook and re-indexes after every co
 | Layer | What | Where | When loaded |
 |-------|------|--------|-------------|
 | Skeleton | File tree, exports, signatures, dep graph (PageRank-ranked), routes, schemas, conventions | `CLAUDE.md` / `AGENTS.md` / `.cursorrules` | Every session |
-| Gotchas | Path-scoped constraints, guard clauses, important comments | `.claude/rules/` | When touching matching files |
+| Deep rules | Behavioral descriptions, danger-zone annotations, test assertions | `.claude/rules/` | When touching matching files |
 | Contracts | Per-module behavioral contracts | `.briefed/contracts/` | Per-prompt via hook |
 | MCP tools | On-demand queries (blast radius, find usages, symbol lookup) | `briefed mcp` server | When the agent asks |
 
@@ -66,7 +74,7 @@ npx briefed stats
 
 ## What gets extracted
 
-Static analysis only — no LLM calls during `init`. Extractors run only when relevant files are present.
+Static analysis only — no LLM calls during `init` (unless `--deep` is used). Extractors run only when relevant files are present.
 
 **Code structure**
 - Function/class/type signatures via TypeScript AST (with regex fallback for other languages)
@@ -101,17 +109,30 @@ Static analysis only — no LLM calls during `init`. Extractors run only when re
 - Secret redaction (skips and redacts files matching sensitive patterns)
 - Staleness detection (compares against last index)
 
+## Deep analysis (`--deep`)
+
+`briefed init --deep` uses your Claude Code subscription to generate LLM-powered annotations for the most important files (top 15%, ranked by PageRank + git churn + complexity). Cached by content hash — re-runs are near-free.
+
+- **Behavioral descriptions** — one-line summaries of what each exported function does
+- **Danger-zone annotations** — for critical-tier files (top 20%): what callers depend on, what tests assert, what breaks if you change this function wrong. Injected as `⚠ DANGER:` lines in path-scoped rules
+- **Test assertion extraction** — surfaces what tests actually check (expect/assert lines), not just test names
+- **Directory boundaries** — "this directory handles X, NOT Y — for Y, look in Z"
+
 ## MCP tools
 
 Run `briefed mcp` to start an MCP server that exposes on-demand queries to your AI agent:
 
 | Tool | What it does |
 |------|--------------|
-| `briefed_blast_radius` | BFS over the dep graph to show every file/route/model affected by changing a given file |
-| `briefed_symbol` | Look up a function/class/type by name — signature, importers, dependencies, test coverage, importance rank |
-| `briefed_find_usages` | Find every call site of a symbol with file, line, and surrounding context. Scoped to actual importers, much faster than grep |
+| `briefed_context` | Search modules by topic — returns contracts for best-matching directories |
+| `briefed_issue_candidates` | Given a bug report, returns top candidate files via keyword matching |
+| `briefed_symbol` | Look up a function/class/type by name — signature, importers, dependencies, test coverage |
+| `briefed_find_usages` | Find every call site of a symbol. Scoped to importers, much faster than grep |
+| `briefed_blast_radius` | BFS over the dep graph — every file affected by changing a given file |
 | `briefed_routes` | Filter API routes by HTTP method or path pattern |
 | `briefed_schema` | Look up database models with fields, types, and relations |
+| `briefed_test_map` | Look up which test file covers a source file, with test names and assertions |
+| `briefed_env_audit` | List every env var the app reads — name, required/optional, category, consumers |
 
 Add to `.mcp.json` or `.claude/settings.json`:
 ```json
@@ -161,6 +182,7 @@ briefed unhook
 
 ```bash
 briefed init              # scan + generate context (writes files)
+briefed init --deep       # + LLM-powered behavioral descriptions & danger zones
 briefed plan              # preview without writing
 briefed stats             # token usage breakdown
 briefed doctor            # validate setup, check staleness
