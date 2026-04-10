@@ -66,7 +66,7 @@ interface DeepCache {
 const CACHE_VERSION = 2;
 const BATCH_SIZE = 8; // files per claude call
 /** Bump when the prompt template changes in ways that affect annotation quality. */
-const PROMPT_VERSION = "v2-danger";
+const PROMPT_VERSION = "v3-danger-required";
 
 interface GitSignals {
   /** Number of commits touching this file in the last 12 months. */
@@ -779,22 +779,35 @@ function buildBatchPrompt(
 
   if (sections.length === 0) return null;
 
-  return `Analyze these source files. For each listed symbol, write ONE behavioral description matching its file's DEPTH hint.
+  return `Analyze these source files and produce behavioral annotations.
 
-DEPTH:thorough — up to 22 words. Include: what it does, side effects (DB writes/events/mutations), failure modes, required state.
-  If CALLERS and TEST sections are provided, also produce a "danger" field (max 30 words): what callers depend on, what invariants tests check, what breaks if this function's behavior changes.
-  Good: {"description": "creates draft invoice, validates project active, emits InvoiceCreated, throws if quota exceeded", "danger": "billing handler depends on InvoiceCreated event shape; test asserts non-null id"}
-DEPTH:normal — up to 13 words. Include: what it does and key behaviors.
+## Response format
+
+Return a JSON object mapping "filepath::symbolName" to either:
+- A string (for DEPTH:normal and DEPTH:brief files)
+- An object {"description": "...", "danger": "..."} (for DEPTH:thorough files — ALWAYS use this format when you see [DEPTH:thorough])
+
+## DEPTH tiers
+
+DEPTH:thorough — 1-2 sentences for description. MUST also include a "danger" field (1-2 sentences): what callers depend on, what invariants tests assert, what will break if this function's behavior changes. Look at the CALLERS and TEST sections below the code for evidence.
+  Good: {"description": "creates draft invoice, validates project active, emits InvoiceCreated, throws if quota exceeded", "danger": "billing webhook handler depends on InvoiceCreated event shape and non-null invoice.id; test asserts event emission and id presence"}
+  Bad danger: {"danger": "important function"} / {"danger": "callers use this"} — too vague, says nothing actionable
+
+DEPTH:normal — 1 sentence. What it does and key behaviors.
   Good: "hashes password with bcrypt 12 rounds, throws on empty input"
-DEPTH:brief — up to 7 words. Terse one-liner only.
+
+DEPTH:brief — under 7 words.
   Good: "formats currency with locale rounding"
-Bad (any tier): "handles invoice logic" / "main service function" (too vague)
 
-For DEPTH:thorough with CALLERS/TEST context, respond with an object {"description": "...", "danger": "..."}. For all other tiers, respond with a plain string.
+Bad (any tier): "handles invoice logic" / "main service function" — vague, no specific behavior mentioned.
 
-Respond with a JSON object mapping "filepath::symbolName" to the description (string or object). No prose, no markdown, just the JSON object on a single line or pretty-printed. Example:
+## Example response
 
-{"src/foo.ts::createInvoice": {"description": "creates draft invoice, validates project active, emits InvoiceCreated", "danger": "billing handler depends on event shape"}, "src/util.ts::hash": "hashes with bcrypt 12 rounds"}
+{"src/foo.ts::createInvoice": {"description": "creates draft invoice, validates project active, emits InvoiceCreated, throws if quota exceeded", "danger": "billing webhook handler destructures event.invoice.id; test asserts non-null id and InvoiceCreated emission"}, "src/foo.ts::deleteInvoice": {"description": "soft-deletes invoice by setting deletedAt, requires admin role, emits InvoiceDeleted", "danger": "archive report queries filter on deletedAt !== null; test asserts soft-delete preserves audit trail"}, "src/util.ts::hash": "hashes with bcrypt 12 rounds, throws on empty input"}
+
+No prose outside the JSON. No markdown fences.
+
+## Files to analyze
 
 ${sections.join("\n---\n")}`;
 }
@@ -1058,12 +1071,12 @@ async function generateDirectoryBoundaries(
     sections.push(`${dir}/: ${top}`);
   }
 
-  const prompt = `Given these codebase directories and their key behaviors, for EACH directory write ONE sentence describing what it is responsible for and what it does. Focus on what an agent would find here when working on a bug or feature.
+  const prompt = `Given these codebase directories and their key behaviors, for EACH directory write ONE sentence describing what it is responsible for. Focus on what an agent would find here when working on a bug or feature.
 
-Keep descriptions positive and specific — avoid "NOT responsible for X" phrasing, which can mislead agents away from the right directory. Instead, describe what IS here.
+When two directories could be confused, add "NOT responsible for X; see Y/ instead" to route agents correctly. This is more helpful than vague positive descriptions.
 
 Respond ONLY with a JSON object mapping directory path to its description sentence. Example:
-{"src/runtime": "Executes compiled output in the browser — component lifecycle, event dispatch, and DOM reconciliation.", "src/compiler": "Transforms source files into executable JS — parsing, type-checking, and code emission."}
+{"src/runtime": "Executes compiled output in the browser — component lifecycle, event dispatch, and DOM reconciliation. NOT responsible for compilation; see src/compiler/.", "src/compiler": "Transforms source files into executable JS — parsing, type-checking, and code emission."}
 
 DIRECTORIES:
 ${sections.join("\n")}`;
