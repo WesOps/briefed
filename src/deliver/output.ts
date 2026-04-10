@@ -40,7 +40,14 @@ export function writeOutputs(
   writeFileSync(
     join(briefedDir, "test-map.json"),
     JSON.stringify(
-      Object.fromEntries(result.testMappings.map((t) => [t.sourceFile, { test: t.testFile, count: t.testCount, names: t.testNames.slice(0, 10) }])),
+      Object.fromEntries(result.testMappings.map((t) => [t.sourceFile, {
+        test: t.testFile,
+        count: t.testCount,
+        names: t.testNames.slice(0, 10),
+        assertions: Object.fromEntries(
+          [...t.assertions.entries()].slice(0, 10).map(([name, lines]) => [name, lines])
+        ),
+      }])),
       null,
       2
     )

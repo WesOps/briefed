@@ -15,6 +15,7 @@ export interface TestMapping {
   testCount: number;      // number of test cases
   confidence: number;     // 0-1: how confident we are in the primary match
   candidates: TestCandidate[];  // all scored candidates, best first
+  assertions: Map<string, string[]>;  // testName → assertion lines
 }
 
 /**
@@ -69,12 +70,14 @@ export function findTestMappings(
     const testPath = join(root, best.file);
     let testNames: string[] = [];
     let testCount = 0;
+    let assertions = new Map<string, string[]>();
 
     try {
       const content = readFileSync(testPath, "utf-8");
       const extracted = extractTestNames(content, extname(best.file));
       testNames = extracted.names;
       testCount = extracted.count;
+      assertions = extractTestAssertions(content, extname(best.file));
     } catch {
       // Can't read test file — still map it
     }
@@ -89,6 +92,7 @@ export function findTestMappings(
       testCount,
       confidence,
       candidates: candidates.slice(0, 3),
+      assertions,
     });
   }
 
