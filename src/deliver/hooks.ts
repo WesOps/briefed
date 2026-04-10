@@ -353,8 +353,17 @@ process.stdin.on("end", () => {
           for (const file of mod.files || []) {
             const testInfo = testMap[file];
             if (testInfo && used < budget) {
-              const testLine = "# Tests for " + file + ": " + testInfo.test + " (" + testInfo.count + " tests)\\n" +
-                (testInfo.names || []).slice(0, 5).map((n) => "  - " + n).join("\\n");
+              const lines = ["# Tests for " + file + ": " + testInfo.test + " (" + testInfo.count + " tests)"];
+              for (const n of (testInfo.names || []).slice(0, 5)) {
+                lines.push("  - " + n);
+                const asserts = testInfo.assertions && testInfo.assertions[n];
+                if (asserts) {
+                  for (const a of asserts.slice(0, 2)) {
+                    lines.push("    " + a);
+                  }
+                }
+              }
+              const testLine = lines.join("\\n");
               if (used + testLine.length <= budget) {
                 output.push(testLine);
                 used += testLine.length;
