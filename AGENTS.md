@@ -1,10 +1,10 @@
 <!-- briefed:agents:start -->
 # briefed: typescript, javascript project
 Stack: typescript, javascript
-Files: 64 source files across 7 directories
+Files: 111 source files across 10 directories
 
-## src/extract/ (30 files)
-signatures.ts ★15
+## src/extract/ (32 files)
+signatures.ts ★16
   interface Symbol — Extracted symbol from a source file. [4 callers]
   type SymbolKind = | "function"
   | "class"
@@ -12,43 +12,52 @@ signatures.ts ★15
   | "type"
   | "enu...
   interface ImportRef — Import reference found in a file.
-  interface FileExtraction — True for `import type { ... }` — erased at runtime, doesn't create real coupl... [14 callers]
-  extractFile(filePath: string, _rootPath: string): FileExtraction — Extract symbols and imports from a source file. [3 callers]
+  interface FileExtraction — True for `import type { ... }` — erased at runtime, doesn't create real coupl... [15 callers]
+  extractFile(filePath: string, _rootPath: string, content?: string): FileExtraction — Extract symbols and imports from a source file. [3 callers]
 ast.ts ★2: extractWithAst — AST-based extraction for TypeScript/JavaScript files using the TS compiler API.
 depgraph.ts ★8
   interface DepGraph [7 callers]
   buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions. [3 callers]
-routes.ts ★5
-  interface Route
+routes.ts ★6
+  interface Route [2 callers]
   extractRoutes(root: string): Route[] — Extract API routes from the codebase. [4 callers]
   formatRoutes(routes: Route[]): string — Format routes for skeleton inclusion. [2 callers]
 scanner.ts ★5
   interface DiscoveredFile
   interface ScanResult
   scanFiles(root: string): ScanResult — Discover all parseable source files in a project. [4 callers]
-schema.ts ★4
-  interface SchemaModel
+schema.ts ★5
+  interface SchemaModel [2 callers]
   interface SchemaField
   interface SchemaRelation
   extractSchemas(root: string): SchemaModel[] — Extract database schema from ORM definition files. [3 callers]
   formatSchemas(models: SchemaModel[]): string — Format schemas for skeleton inclusion.
+env.ts ★5
+  interface EnvVar [2 callers]
+  extractEnvVars(root: string): EnvVar[] — Extract environment variables the project expects. [3 callers]
+  formatEnvVars(vars: EnvVar[]): string — Format env vars for skeleton inclusion. [2 callers]
 staleness.ts ★2: StalenessReport, checkStaleness — Check if the briefed context is stale (source files changed since last index)., formatStaleness — Format staleness report for display.
 monorepo.ts ★3
   interface WorkspaceInfo
   interface WorkspacePackage
   detectMonorepo(cwd: string): WorkspaceInfo — Detect if we're in a monorepo and identify packages. [3 callers]
-env.ts ★3
-  interface EnvVar
-  extractEnvVars(root: string): EnvVar[] — Extract environment variables the project expects. [2 callers]
-  formatEnvVars(vars: EnvVar[]): string — Format env vars for skeleton inclusion. [2 callers]
+tests.ts ★3
+  interface TestCandidate
+  interface TestMapping [2 callers]
+  findTestMappings(sourceFiles: string[], root: string): TestMapping[] — Find test files that correspond to source files.
+  extractTestAssertions(content: string, ext: string): Map<string, string[]> — Extract assertion lines from test blocks, mapped by test name.
+complexity.ts ★5
+  interface ComplexityScore [4 callers]
+  computeComplexity(extraction: FileExtraction, depGraph: DepGraph, root, content?: string): ComplexityScore — Compute complexity score for a file. [2 callers]
+conventions.ts ★3
+  interface ProjectConventions
+  detectConventions(extractions: FileExtraction[], _root: string): ProjectConventions — Auto-detect project conventions from code patterns.
+  formatConventions(conv: ProjectConventions): string — Format conventions for inclusion in CLAUDE.md or rules. [2 callers]
 scripts.ts ★3
   interface ProjectScripts
   extractScripts(root: string): ProjectScripts — Extract build/test/dev commands from package.json, Makefile, etc. [2 callers]
   formatScripts(scripts: ProjectScripts): string — Format scripts for skeleton inclusion. [2 callers]
 security.ts ★2: SecurityWarning, SecurityIssueType, isSensitiveFile — Check if a file should be excluded from context output for security reasons., scanForSecrets — Scan a file for sensitive data patterns., redactSecrets — Redact sensitive values from text before including in context.
-complexity.ts ★4
-  interface ComplexityScore [3 callers]
-  computeComplexity(extraction: FileExtraction, depGraph: DepGraph): ComplexityScore — Compute complexity score for a file. [2 callers]
 deps.ts ★3
   interface DepInfo
   interface DepsResult — Package name as imported (e.g. "stripe", "
@@ -57,15 +66,8 @@ deps.ts ★3
   __test — Exposed for tests.
 deep.ts ★2
   interface DeepResult — Deep analysis: use `claude -p` (the user's Claude Code subscription, $0
-  runDeepAnalysis(extractions: FileExtraction[], depGraph: DepGraph, root: string): Promise<DeepResult>
-  buildDeepRules(extractions: FileExtraction[], annotations: Map<string, Map<string, string>>): Map<string, string> — Build per-directory rule files that Claude Code loads only when it [2 callers]
-  mergeDeepAnnotations(extractions: FileExtraction[], annotations: Map<string, Map<string, string>>): number — Merge deep annotations into the extraction symbols. Only used when we
-  __test — Exposed for tests.
 pipeline.ts ★2
   interface ExtractionResult
-  runExtractionPipeline(root: string, scan: ScanResult, stack: StackInfo): ExtractionResult — Run all extraction steps and return the collected results.
-conventions.ts ★2: ProjectConventions, detectConventions — Auto-detect project conventions from code patterns., formatConventions — Format conventions for inclusion in CLAUDE.md or rules.
-tests.ts ★1: TestMapping, findTestMappings — Find test files that correspond to source files.
 ast.test.ts: 
 complexity.test.ts: 
 deep.test.ts: 
@@ -74,37 +76,9 @@ deps.test.ts:
 routes.test.ts: GET
 staleness.test.ts: 
 
-## src/utils/ (7 files)
-log.ts ★9
-  debug(msg: string): void — Lightweight logging utilities. [9 callers]
-pagerank.ts ★2: GraphNode — Simple PageRank implementation for dependency graph ranking., computePageRank — Compute PageRank scores for a file dependency graph., computeRefCounts — Get reference count (in-degree) for each node.
-detect.ts ★6
-  interface StackInfo [2 callers]
-  detectStack(root: string): StackInfo — Detect the project's tech stack from config files [3 callers]
-  extToLanguage(ext: string): string | null — Map file extension to language name
-  PARSEABLE_EXTENSIONS — File extensions we should parse [2 callers]
-  SKIP_DIRS — Directories to always skip [2 callers]
-tokens.ts ★6
-  countTokens(text: string): number — Estimate token count for a string [5 callers]
-  formatTokens(count: number): string — Format token count for display [4 callers]
-  formatBytes(bytes: number): string — Format byte count for display
-pagerank.test.ts: 
-
-## src/mcp/ (9 files)
-cached-loader.ts ★3
-  loadCachedExtractions(root: string): CachedData — Load extractions from the SHA256 cache if available, otherwise extract live. [3 callers]
-blast-radius.ts ★2: blastRadius — BFS over the dependency graph to find all files transitively affected
-find-usages.ts ★2: findUsages — Find every call site of a symbol across the codebase.
-route-detail.ts ★1: routeDetail — Look up API routes with optional method and path filtering.
-schema-lookup.ts ★1: schemaLookup — Look up database schema models. Can list all models or drill into a specific one.
-symbol-lookup.ts ★1: symbolLookup — Look up a symbol (function, class, type, etc.) and show:
-server.ts ★1: startMcpServer
-blast-radius.test.ts: 
-find-usages.test.ts: 
-
-<!-- briefed skeleton: 38 files, ~1742 tokens -->
-Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
-Tests: 19 source files have matching test files
+<!-- briefed skeleton: 24 files, ~1205 tokens -->
+Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, throws custom error classes (not generic Error), predominantly async/await (not callbacks), prefers named exports over default exports, test files are in separate test/ directory, uses .test.{ext} naming convention
+Tests: 34 source files have matching test files
 Commands:
   build: tsc
   dev: tsc --watch
@@ -112,10 +86,11 @@ Commands:
   lint: tsc --noEmit
   start: node dist/cli.js
 Required env: config: BRIEFED_DEBUG, USERPROFILE, APPDATA
-External deps:
-  - vitest@4.1.2 — 20 imports
-  - @modelcontextprotocol/sdk@1.29.0 — 6 imports
-  - glob@13.0.6 — 5 imports
+External deps (Context7 detected — ask Context7 for public docs by version):
+  - vitest@4.1.2 — 33 imports
+  - @modelcontextprotocol/sdk@1.29.0 — 10 imports
+  - glob@13.0.6 — 6 imports
+  - simple-git@3.33.0 — 2 imports
   - express@5.2.1 — 2 imports
   - commander@13.1.0 — 1 imports
   - typescript@5.9.3 — 1 imports
@@ -123,6 +98,4 @@ External deps:
   - dep — 1 imports
   - js-yaml@4.1.1 — 1 imports
   - zod@4.3.6 — 1 imports
-
-Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, prefers named exports over default exports
 <!-- briefed:agents:end -->

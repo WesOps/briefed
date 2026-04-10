@@ -253,6 +253,7 @@ export async function runDeepAnalysis(
     }
   }
 
+  debug(`deep: split — ${criticalMisses.length} critical, ${normalMisses.length} normal misses`);
   const allBatches: { batch: FileExtraction[]; prompt: string; model: "haiku" | "sonnet" }[] = [];
 
   // Normal/peripheral batches — string descriptions, Haiku
@@ -283,6 +284,13 @@ export async function runDeepAnalysis(
       const { batch } = chunk[j];
 
       const { descriptions: parsed, dangerZones: batchDangers } = parseBatchResponse(raw);
+      if (batchDangers.size > 0) {
+        debug(`deep: batch produced ${batchDangers.size} files with danger zones`);
+      }
+      // Debug: log if critical batch returned no dangers
+      if (chunk[j].model === "sonnet" && batchDangers.size === 0) {
+        debug(`deep: WARNING — sonnet critical batch returned 0 danger zones. Raw response (first 300): ${raw.slice(0, 300)}`);
+      }
       for (const ext of batch) {
         const fileAnnotations = parsed.get(ext.path) || new Map<string, string>();
         if (fileAnnotations.size === 0) continue;
