@@ -29,6 +29,8 @@ import type { TestMapping } from "./tests.js";
 export interface DeepResult {
   /** file path → (symbol name → one-line description) */
   annotations: Map<string, Map<string, string>>;
+  /** file path → (symbol name → danger zone description) */
+  dangerZones: Map<string, Map<string, string>>;
   /** Optional system overview paragraph for the top of CLAUDE.md. */
   systemOverview: string | null;
   /**
@@ -50,6 +52,8 @@ interface DeepCacheEntry {
   hash: string;
   /** symbolName → description */
   annotations: Record<string, string>;
+  /** symbolName → danger zone description */
+  dangerZones?: Record<string, string>;
 }
 
 interface DeepCache {
@@ -130,6 +134,7 @@ export async function runDeepAnalysis(
 ): Promise<DeepResult> {
   const empty: DeepResult = {
     annotations: new Map(),
+    dangerZones: new Map(),
     systemOverview: null,
     directoryBoundaries: new Map(),
     freshAnnotations: 0,
@@ -145,6 +150,7 @@ export async function runDeepAnalysis(
 
   const cache = loadCache(root);
   const annotations = new Map<string, Map<string, string>>();
+  const allDangerZones = new Map<string, Map<string, string>>();
   let freshAnnotations = 0;
   let cachedAnnotations = 0;
 
@@ -209,6 +215,13 @@ export async function runDeepAnalysis(
         cachedAnnotations++;
       }
       annotations.set(ext.path, map);
+      if (cached.dangerZones) {
+        const dangerMap = new Map<string, string>();
+        for (const [name, danger] of Object.entries(cached.dangerZones)) {
+          dangerMap.set(name, danger);
+        }
+        allDangerZones.set(ext.path, dangerMap);
+      }
     } else {
       misses.push(ext);
     }
@@ -240,7 +253,6 @@ export async function runDeepAnalysis(
     if (!raw) continue;
 
     const { descriptions: parsed, dangerZones: batchDangers } = parseBatchResponse(raw);
-    void batchDangers; // Task 5 will use this
     for (const ext of batch) {
       const fileAnnotations = parsed.get(ext.path) || new Map<string, string>();
       if (fileAnnotations.size === 0) continue;
@@ -253,12 +265,28 @@ export async function runDeepAnalysis(
       }
       annotations.set(ext.path, existing);
 
+      // Merge danger zones
+      const fileDangers = batchDangers.get(ext.path);
+      if (fileDangers && fileDangers.size > 0) {
+        const existingDangers = allDangerZones.get(ext.path) || new Map();
+        for (const [name, danger] of fileDangers) {
+          existingDangers.set(name, danger);
+        }
+        allDangerZones.set(ext.path, existingDangers);
+        if (cache.files[ext.path]) {
+          cache.files[ext.path].dangerZones = Object.fromEntries(existingDangers);
+        }
+      }
+
       // Update cache entry
       const content = safeRead(join(root, ext.path));
       if (content) {
         cache.files[ext.path] = {
           hash: hashFileForCache(content, ext.symbols),
           annotations: Object.fromEntries(existing),
+          ...(allDangerZones.has(ext.path) && {
+            dangerZones: Object.fromEntries(allDangerZones.get(ext.path)!),
+          }),
         };
       }
     }
@@ -309,6 +337,7 @@ export async function runDeepAnalysis(
 
   return {
     annotations,
+    dangerZones: allDangerZones,
     systemOverview,
     directoryBoundaries,
     freshAnnotations,
