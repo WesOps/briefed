@@ -126,6 +126,7 @@ function maxFilesToAnnotate(totalFiles: number): number {
   return Math.min(Math.max(60, Math.ceil(totalFiles * 0.15)), 200);
 }
 const CLAUDE_TIMEOUT_MS = 120_000;
+const SONNET_TIMEOUT_MS = 180_000; // Critical batches need more time (larger code windows + caller context)
 
 export async function runDeepAnalysis(
   extractions: FileExtraction[],
@@ -170,17 +171,30 @@ export async function runDeepAnalysis(
     entrypointSeeds,
   );
 
-  // Pick the files worth annotating: must have at least one undocumented
-  // exported function/method/class, ranked by blended importance score.
+  // Pick the files worth annotating: files with undocumented exported symbols
+  // OR files that have descriptions but no danger zones in the deep-cache
+  // (need re-annotation with the critical prompt to generate danger fields).
+  const filesWithDangers = new Set<string>();
+  for (const [path, entry] of Object.entries(cache.files)) {
+    if (entry.dangerZones && Object.keys(entry.dangerZones).length > 0) {
+      filesWithDangers.add(path);
+    }
+  }
+
   const candidates = extractions
-    .filter((e) =>
-      e.symbols.some(
+    .filter((e) => {
+      const hasExportedSymbols = e.symbols.some(
         (s) =>
           s.exported &&
-          !s.description &&
           ["function", "method", "class", "component"].includes(s.kind),
-      ),
-    )
+      );
+      if (!hasExportedSymbols) return false;
+      // Include if any symbol lacks a description
+      const hasUndocumented = e.symbols.some((s) => s.exported && !s.description);
+      if (hasUndocumented) return true;
+      // Also include if file has no danger zones (may need critical re-annotation)
+      return !filesWithDangers.has(e.path);
+    })
     .sort((a, b) =>
       scoreFile(b, depGraph, complexityMap, gitSignals, testedFiles, personalizedRank) -
       scoreFile(a, depGraph, complexityMap, gitSignals, testedFiles, personalizedRank)
@@ -211,18 +225,23 @@ export async function runDeepAnalysis(
     const hash = hashFileForCache(content, ext.symbols);
     const cached = cache.files[ext.path];
     if (cached && cached.hash === hash) {
+      // Serve descriptions from cache
       const map = new Map<string, string>();
       for (const [name, desc] of Object.entries(cached.annotations)) {
         map.set(name, desc);
         cachedAnnotations++;
       }
       annotations.set(ext.path, map);
-      if (cached.dangerZones) {
+      if (cached.dangerZones && Object.keys(cached.dangerZones).length > 0) {
         const dangerMap = new Map<string, string>();
         for (const [name, danger] of Object.entries(cached.dangerZones)) {
           dangerMap.set(name, danger);
         }
         allDangerZones.set(ext.path, dangerMap);
+      } else {
+        // Hash matches but no danger zones — re-annotate with critical prompt
+        // if this file ends up in the critical tier
+        misses.push(ext);
       }
     } else {
       misses.push(ext);
@@ -1045,11 +1064,12 @@ function runClaudeJsonAsync(
       child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
       child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
 
+      const timeoutMs = model === "sonnet" || model === "opus" ? SONNET_TIMEOUT_MS : CLAUDE_TIMEOUT_MS;
       const timer = setTimeout(() => {
         child.kill("SIGTERM");
-        debug("deep: claude timed out");
+        debug(`deep: claude ${model} timed out after ${timeoutMs}ms`);
         resolve(null);
-      }, CLAUDE_TIMEOUT_MS);
+      }, timeoutMs);
 
       child.on("error", (err) => {
         clearTimeout(timer);
