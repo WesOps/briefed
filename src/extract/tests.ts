@@ -211,3 +211,109 @@ function extractTestNames(
 
   return { names, count: names.length };
 }
+
+/**
+ * Extract assertion lines from test blocks, mapped by test name.
+ * For JS/TS: finds it()/test() blocks via brace-depth tracking, collects expect/assert lines.
+ * For Python: finds def test_* blocks via indent tracking, collects assert lines.
+ * Caps at 5 assertions per test; truncates each line to 120 chars.
+ */
+export function extractTestAssertions(
+  content: string,
+  ext: string
+): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  const MAX_ASSERTIONS = 5;
+  const MAX_LINE_LEN = 120;
+
+  if ([".ts", ".tsx", ".js", ".jsx", ".mjs"].includes(ext)) {
+    const lines = content.split("\n");
+    // Match it("name") / test("name") — not describe
+    const testStartPattern = /^\s*(?:it|test)\s*\(\s*(['"`])([^'"`]+)\1/;
+    let currentTest: string | null = null;
+    let braceDepth = 0;
+    let testBraceStart = 0; // brace depth when test block opened
+
+    for (const line of lines) {
+      if (currentTest === null) {
+        const m = testStartPattern.exec(line);
+        if (m) {
+          currentTest = m[2];
+          testBraceStart = braceDepth;
+          // Count braces on this line
+          for (const ch of line) {
+            if (ch === "{") braceDepth++;
+            else if (ch === "}") braceDepth--;
+          }
+        } else {
+          // Still track brace depth outside test blocks (for describe nesting)
+          for (const ch of line) {
+            if (ch === "{") braceDepth++;
+            else if (ch === "}") braceDepth--;
+          }
+        }
+      } else {
+        // Inside a test block — check for assertion lines first
+        if (
+          line.includes("expect(") ||
+          line.includes("assert(") ||
+          line.includes("assert.")
+        ) {
+          const assertions = result.get(currentTest) ?? [];
+          if (assertions.length < MAX_ASSERTIONS) {
+            assertions.push(line.slice(0, MAX_LINE_LEN));
+            result.set(currentTest, assertions);
+          }
+        }
+        // Update brace depth
+        for (const ch of line) {
+          if (ch === "{") braceDepth++;
+          else if (ch === "}") braceDepth--;
+        }
+        // Test block ends when depth returns to where it was before opening brace
+        if (braceDepth <= testBraceStart) {
+          currentTest = null;
+        }
+      }
+    }
+  } else if (ext === ".py") {
+    const lines = content.split("\n");
+    const testStartPattern = /^(\s*)def\s+(test_\w+)\s*\(/;
+    let currentTest: string | null = null;
+    let testIndent = "";
+
+    for (const line of lines) {
+      if (currentTest === null) {
+        const m = testStartPattern.exec(line);
+        if (m) {
+          currentTest = m[2];
+          testIndent = m[1];
+        }
+      } else {
+        // Blank lines are allowed inside a block
+        if (line.trim() === "") continue;
+        // Detect block end: non-blank line with indent <= test def indent
+        const lineIndent = line.match(/^(\s*)/)?.[1] ?? "";
+        if (lineIndent.length <= testIndent.length && /\S/.test(line)) {
+          // Could be a new test def — check before closing
+          const m = testStartPattern.exec(line);
+          currentTest = null;
+          if (m) {
+            currentTest = m[2];
+            testIndent = m[1];
+          }
+          continue;
+        }
+        if (line.includes("assert")) {
+          const assertions = result.get(currentTest) ?? [];
+          if (assertions.length < MAX_ASSERTIONS) {
+            assertions.push(line.slice(0, MAX_LINE_LEN));
+            result.set(currentTest, assertions);
+          }
+        }
+      }
+    }
+  }
+
+  return result;
+}
