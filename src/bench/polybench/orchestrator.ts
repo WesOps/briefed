@@ -21,7 +21,7 @@
  * emit a partial report.
  */
 
-import { existsSync, mkdirSync, rmSync } from "fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { resolve, join } from "path";
 import { findClaude } from "../shared.js";
 import { cloneTask, commitBaseState } from "./clone.js";
@@ -362,6 +362,16 @@ async function runOneCell(
   cell.numTurns = runResult.numTurns;
   cell.inputTokens = runResult.inputTokens;
   cell.outputTokens = runResult.outputTokens;
+
+  // Save transcript for post-run analysis
+  if (runResult.stdout) {
+    const transcriptDir = join(resolve(opts.outputDir), "transcripts", arm);
+    mkdirSync(transcriptDir, { recursive: true });
+    writeFileSync(
+      join(transcriptDir, `${task.instanceId}.jsonl`),
+      runResult.stdout,
+    );
+  }
 
   // 5. Capture filtered diff (source-only)
   cell.modelPatch = captureAndFilterDiff(repoPath);
