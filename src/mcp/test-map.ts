@@ -13,7 +13,7 @@ export function testMap(root: string, sourceFile?: string): CallToolResult {
     return { content: [{ type: "text", text: "No test map found. Run `briefed init` first." }] };
   }
 
-  let map: Record<string, { test: string; count: number; names: string[] }>;
+  let map: Record<string, { test: string; count: number; names: string[]; assertions?: Record<string, string[]> }>;
   try {
     map = JSON.parse(readFileSync(mapPath, "utf-8"));
   } catch {
@@ -35,7 +35,16 @@ export function testMap(root: string, sourceFile?: string): CallToolResult {
       );
       return { content: [{ type: "text", text: `Fuzzy matches for "${sourceFile}":\n\n${lines.join("\n")}` }] };
     }
-    const names = entry.names.length ? `\n\nTest names:\n${entry.names.map((n) => `- ${n}`).join("\n")}` : "";
+    let names = entry.names.length ? `\n\nTest names:\n${entry.names.map((n) => `- ${n}`).join("\n")}` : "";
+    if (entry.assertions && Object.keys(entry.assertions).length > 0) {
+      names += "\n\nAssertions:";
+      for (const [testName, asserts] of Object.entries(entry.assertions).slice(0, 5)) {
+        names += `\n- "${testName}":`;
+        for (const a of asserts.slice(0, 3)) {
+          names += `\n  ${a}`;
+        }
+      }
+    }
     return {
       content: [{
         type: "text",
