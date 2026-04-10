@@ -66,7 +66,7 @@ interface DeepCache {
 const CACHE_VERSION = 2;
 const BATCH_SIZE = 8; // files per claude call
 /** Bump when the prompt template changes in ways that affect annotation quality. */
-const PROMPT_VERSION = "v4-callchain";
+const PROMPT_VERSION = "v5-split-prompt";
 
 interface GitSignals {
   /** Number of commits touching this file in the last 12 months. */
@@ -239,14 +239,36 @@ export async function runDeepAnalysis(
 
   // Batch-annotate the misses — run up to PARALLEL_BATCHES concurrent claude calls.
   // Each batch is independent (different files), so parallelism is safe.
+  // Split misses into critical (top 20%) and normal tiers.
+  // Critical files get a separate prompt that ONLY allows {description, danger}
+  // objects — no string option. This prevents the LLM from skipping danger fields.
+  const criticalMisses: FileExtraction[] = [];
+  const normalMisses: FileExtraction[] = [];
+  for (const ext of misses) {
+    const score = scoreMap?.get(ext.path) ?? 0;
+    if (criticalCutoff !== undefined && score >= criticalCutoff) {
+      criticalMisses.push(ext);
+    } else {
+      normalMisses.push(ext);
+    }
+  }
+
   const allBatches: { batch: FileExtraction[]; prompt: string; model: "haiku" | "sonnet" }[] = [];
-  for (let i = 0; i < misses.length; i += BATCH_SIZE) {
-    const batch = misses.slice(i, i + BATCH_SIZE);
+
+  // Normal/peripheral batches — string descriptions, Haiku
+  for (let i = 0; i < normalMisses.length; i += BATCH_SIZE) {
+    const batch = normalMisses.slice(i, i + BATCH_SIZE);
     const prompt = buildBatchPrompt(batch, root, scoreMap, criticalCutoff, peripheralCutoff, depGraph, testMappings, entrypointSeeds);
     if (!prompt) continue;
-    const hasCritical = criticalCutoff !== undefined &&
-      batch.some(ext => (scoreMap?.get(ext.path) ?? 0) >= criticalCutoff);
-    allBatches.push({ batch, prompt, model: hasCritical ? "sonnet" : "haiku" });
+    allBatches.push({ batch, prompt, model: "haiku" });
+  }
+
+  // Critical batches — object format with danger fields, Sonnet
+  for (let i = 0; i < criticalMisses.length; i += BATCH_SIZE) {
+    const batch = criticalMisses.slice(i, i + BATCH_SIZE);
+    const prompt = buildCriticalBatchPrompt(batch, root, depGraph, testMappings, entrypointSeeds);
+    if (!prompt) continue;
+    allBatches.push({ batch, prompt, model: "sonnet" });
   }
 
   for (let i = 0; i < allBatches.length; i += PARALLEL_BATCHES) {
@@ -861,6 +883,92 @@ function sliceRelevantLines(content: string, symbols: Symbol[], windowSize = 25)
     last = i;
   }
   return out.length > 180 ? out.slice(0, 180).join("\n") + "\n..." : out.join("\n");
+}
+
+/**
+ * Separate prompt for critical-tier files. ONLY allows {description, danger}
+ * objects — no string format mentioned at all. Sonnet follows this reliably.
+ */
+function buildCriticalBatchPrompt(
+  batch: FileExtraction[],
+  root: string,
+  depGraph?: DepGraph,
+  testMappings?: TestMapping[],
+  entrypointSeeds?: Map<string, number>,
+): string | null {
+  const sections: string[] = [];
+
+  const testAssertionsByFile = new Map<string, Map<string, string[]>>();
+  if (testMappings) {
+    for (const tm of testMappings) {
+      if (tm.assertions && tm.assertions.size > 0) {
+        testAssertionsByFile.set(tm.sourceFile, tm.assertions);
+      }
+    }
+  }
+
+  for (const ext of batch) {
+    const content = safeRead(join(root, ext.path));
+    if (!content) continue;
+
+    const needsDesc = ext.symbols.filter(
+      (s) =>
+        s.exported &&
+        !s.description &&
+        ["function", "method", "class", "component"].includes(s.kind),
+    );
+    if (needsDesc.length === 0) continue;
+
+    const relevant = sliceRelevantLines(content, needsDesc, 50);
+
+    // Build caller + test context
+    const contextLines: string[] = [];
+    if (depGraph) {
+      for (const s of needsDesc) {
+        if (entrypointSeeds) {
+          const chain = getCallChain(s.name, ext.path, depGraph, entrypointSeeds);
+          if (chain) contextLines.push(`CALL CHAIN: ${chain}`);
+        }
+        const ctx = getCallerContext(s.name, ext.path, depGraph, root);
+        if (ctx.length > 0) {
+          contextLines.push(`CALLERS of ${s.name}:`);
+          contextLines.push(...ctx);
+        }
+      }
+    }
+    const testAssertions = testAssertionsByFile.get(ext.path);
+    if (testAssertions && testAssertions.size > 0) {
+      contextLines.push("");
+      for (const [testName, assertions] of [...testAssertions.entries()].slice(0, 5)) {
+        contextLines.push(`TEST "${testName}":`);
+        for (const a of assertions.slice(0, 3)) {
+          contextLines.push(`  ${a}`);
+        }
+      }
+    }
+
+    const extraContext = contextLines.length > 0 ? "\n" + contextLines.join("\n") : "";
+    sections.push(
+      `FILE: ${ext.path}\nSYMBOLS: ${needsDesc.map((s) => s.name).join(", ")}\nCODE:\n${relevant}${extraContext}`,
+    );
+  }
+
+  if (sections.length === 0) return null;
+
+  return `Analyze these high-importance source files. For EVERY symbol, respond with a JSON object containing BOTH fields:
+
+- "description": 1-2 sentences — what it does, side effects, failure modes, required state
+- "danger": 1-2 sentences — what callers depend on, what tests assert, what breaks if this function changes
+
+Use the CALL CHAIN, CALLERS, and TEST sections as evidence for the danger field. Every symbol MUST have both fields.
+
+Example response:
+
+{"src/auth.ts::createSession": {"description": "creates user session with JWT, sets httpOnly cookie, throws if user not found", "danger": "login handler expects non-null session with id+expirationDate; test asserts cookie is set and redirect fires"}, "src/auth.ts::destroySession": {"description": "clears session cookie and removes DB row, always throws redirect to /login", "danger": "root loader catches the redirect-throw to detect stale sessions; code after destroySession is unreachable"}}
+
+Do NOT use plain strings. Every value MUST be an object with "description" and "danger". No prose outside the JSON.
+
+${sections.join("\n---\n")}`;
 }
 
 /**
