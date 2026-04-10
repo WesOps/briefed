@@ -365,7 +365,7 @@ async function runOneCell(
 
   // Save transcript for post-run analysis
   if (runResult.stdout) {
-    const transcriptDir = join(resolve(opts.outputDir), "transcripts", arm);
+    const transcriptDir = join(resolve(opts.outputDir), "transcripts", cell.arm);
     mkdirSync(transcriptDir, { recursive: true });
     writeFileSync(
       join(transcriptDir, `${task.instanceId}.jsonl`),
