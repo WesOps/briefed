@@ -57,14 +57,16 @@ interface DeepCacheEntry {
 }
 
 interface DeepCache {
-  version: 1;
+  version: number;
   files: Record<string, DeepCacheEntry>;
   overview: { hash: string; text: string } | null;
   boundaries: { hash: string; dirs: Record<string, string> } | null;
 }
 
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const BATCH_SIZE = 8; // files per claude call
+/** Bump when the prompt template changes in ways that affect annotation quality. */
+const PROMPT_VERSION = "v2-danger";
 
 interface GitSignals {
   /** Number of commits touching this file in the last 12 months. */
@@ -659,14 +661,15 @@ function hashString(s: string): string {
 }
 
 function hashFileForCache(content: string, symbols: Symbol[]): string {
-  // Hash file content + the set of exported symbol names. If either
-  // changes, we re-annotate.
+  // Hash file content + exported symbol names + prompt version.
+  // Bumping PROMPT_VERSION invalidates per-file cache entries so
+  // prompt template changes (e.g. adding danger zones) trigger re-annotation.
   const names = symbols
     .filter((s) => s.exported)
     .map((s) => s.name)
     .sort()
     .join(",");
-  return hashString(content + "\u0000" + names);
+  return hashString(content + "\u0000" + names + "\u0000" + PROMPT_VERSION);
 }
 
 function getCallerContext(
