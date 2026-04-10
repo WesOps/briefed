@@ -238,7 +238,7 @@ export async function runDeepAnalysis(
   // Batch-annotate the misses
   for (let i = 0; i < misses.length; i += BATCH_SIZE) {
     const batch = misses.slice(i, i + BATCH_SIZE);
-    const prompt = buildBatchPrompt(batch, root, scoreMap, criticalCutoff, peripheralCutoff);
+    const prompt = buildBatchPrompt(batch, root, scoreMap, criticalCutoff, peripheralCutoff, depGraph, testMappings);
     if (!prompt) continue;
 
     // Use Sonnet for batches that contain critical-tier files (top 20% by score)
@@ -640,14 +640,55 @@ function hashFileForCache(content: string, symbols: Symbol[]): string {
   return hashString(content + "\u0000" + names);
 }
 
+function getCallerContext(
+  symbolName: string,
+  filePath: string,
+  depGraph: DepGraph,
+  root: string,
+): string[] {
+  const key = `${filePath}#${symbolName}`;
+  const importers = depGraph.symbolRefs?.get(key);
+  if (!importers || importers.length === 0) return [];
+
+  const contexts: string[] = [];
+  for (const importerPath of importers.slice(0, 3)) {
+    const content = safeRead(join(root, importerPath));
+    if (!content) continue;
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length && contexts.length < 3; i++) {
+      if (lines[i].includes(symbolName) && !lines[i].match(/^import\s/)) {
+        const before = i > 0 ? lines[i - 1].trim() : "";
+        const call = lines[i].trim();
+        const after = i < lines.length - 1 ? lines[i + 1].trim() : "";
+        const fname = importerPath.split("/").pop() || importerPath;
+        contexts.push(`  ${fname}:${i + 1}: ${before ? before + " → " : ""}${call}${after ? " → " + after : ""}`);
+        break;
+      }
+    }
+  }
+  return contexts;
+}
+
 function buildBatchPrompt(
   batch: FileExtraction[],
   root: string,
   scoreMap?: Map<string, number>,
   criticalCutoff?: number,
   peripheralCutoff?: number,
+  depGraph?: DepGraph,
+  testMappings?: TestMapping[],
 ): string | null {
   const sections: string[] = [];
+
+  const testAssertionsByFile = new Map<string, Map<string, string[]>>();
+  if (testMappings) {
+    for (const tm of testMappings) {
+      if (tm.assertions && tm.assertions.size > 0) {
+        testAssertionsByFile.set(tm.sourceFile, tm.assertions);
+      }
+    }
+  }
+
   for (const ext of batch) {
     const content = safeRead(join(root, ext.path));
     if (!content) continue;
@@ -674,8 +715,33 @@ function buildBatchPrompt(
       depthHint = "[DEPTH:normal — up to 13 words: what it does]";
     }
 
+    let extraContext = "";
+    if (criticalCutoff !== undefined && score >= criticalCutoff && depGraph) {
+      const callerLines: string[] = [];
+      for (const s of needsDesc) {
+        const ctx = getCallerContext(s.name, ext.path, depGraph, root);
+        if (ctx.length > 0) {
+          callerLines.push(`CALLERS of ${s.name}:`);
+          callerLines.push(...ctx);
+        }
+      }
+      const testAssertions = testAssertionsByFile.get(ext.path);
+      if (testAssertions && testAssertions.size > 0) {
+        callerLines.push("");
+        for (const [testName, assertions] of [...testAssertions.entries()].slice(0, 5)) {
+          callerLines.push(`TEST "${testName}":`);
+          for (const a of assertions.slice(0, 3)) {
+            callerLines.push(`  ${a}`);
+          }
+        }
+      }
+      if (callerLines.length > 0) {
+        extraContext = "\n" + callerLines.join("\n");
+      }
+    }
+
     sections.push(
-      `FILE: ${ext.path} ${depthHint}\nSYMBOLS: ${needsDesc.map((s) => s.name).join(", ")}\nCODE:\n${relevant}`,
+      `FILE: ${ext.path} ${depthHint}\nSYMBOLS: ${needsDesc.map((s) => s.name).join(", ")}\nCODE:\n${relevant}${extraContext}`,
     );
   }
 
@@ -684,16 +750,19 @@ function buildBatchPrompt(
   return `Analyze these source files. For each listed symbol, write ONE behavioral description matching its file's DEPTH hint.
 
 DEPTH:thorough — up to 22 words. Include: what it does, side effects (DB writes/events/mutations), failure modes, required state.
-  Good: "creates draft invoice, validates project active, emits InvoiceCreated, throws if quota exceeded"
+  If CALLERS and TEST sections are provided, also produce a "danger" field (max 30 words): what callers depend on, what invariants tests check, what breaks if this function's behavior changes.
+  Good: {"description": "creates draft invoice, validates project active, emits InvoiceCreated, throws if quota exceeded", "danger": "billing handler depends on InvoiceCreated event shape; test asserts non-null id"}
 DEPTH:normal — up to 13 words. Include: what it does and key behaviors.
   Good: "hashes password with bcrypt 12 rounds, throws on empty input"
 DEPTH:brief — up to 7 words. Terse one-liner only.
   Good: "formats currency with locale rounding"
 Bad (any tier): "handles invoice logic" / "main service function" (too vague)
 
-Respond with a JSON object mapping "filepath::symbolName" to the description string. No prose, no markdown, just the JSON object on a single line or pretty-printed. Example:
+For DEPTH:thorough with CALLERS/TEST context, respond with an object {"description": "...", "danger": "..."}. For all other tiers, respond with a plain string.
 
-{"src/foo.ts::createInvoice": "creates draft invoice, validates project active, emits InvoiceCreated", "src/foo.ts::deleteInvoice": "soft-deletes invoice, requires admin role"}
+Respond with a JSON object mapping "filepath::symbolName" to the description (string or object). No prose, no markdown, just the JSON object on a single line or pretty-printed. Example:
+
+{"src/foo.ts::createInvoice": {"description": "creates draft invoice, validates project active, emits InvoiceCreated", "danger": "billing handler depends on event shape"}, "src/util.ts::hash": "hashes with bcrypt 12 rounds"}
 
 ${sections.join("\n---\n")}`;
 }
