@@ -75,6 +75,18 @@ export function symbolLookup(root: string, name: string): CallToolResult {
     if (match.calls && match.calls.length > 0) {
       lines.push(`**Calls:** ${match.calls.join(", ")}`);
     }
+
+    // Danger zone from deep-cache.json
+    const deepCachePath = join(root, ".briefed", "deep-cache.json");
+    if (existsSync(deepCachePath)) {
+      try {
+        const deepCache = JSON.parse(readFileSync(deepCachePath, "utf-8"));
+        const fileEntry = deepCache.files?.[match.file];
+        if (fileEntry?.dangerZones?.[match.name]) {
+          lines.push(`**\u26A0 DANGER:** ${fileEntry.dangerZones[match.name]}`);
+        }
+      } catch {}
+    }
     lines.push("");
 
     // Symbol-level callers (who imports this symbol)
@@ -115,6 +127,15 @@ export function symbolLookup(root: string, name: string): CallToolResult {
           lines.push(`**Test file:** \`${testInfo.test}\` (${testInfo.count} tests)`);
           if (testInfo.names && testInfo.names.length > 0) {
             lines.push(`**Key tests:** ${testInfo.names.slice(0, 8).join(", ")}`);
+          }
+          if (testInfo.assertions && Object.keys(testInfo.assertions).length > 0) {
+            lines.push("**Assertions:**");
+            for (const [testName, asserts] of Object.entries(testInfo.assertions as Record<string, string[]>).slice(0, 5)) {
+              lines.push(`- "${testName}":`);
+              for (const a of asserts.slice(0, 3)) {
+                lines.push(`  ${a}`);
+              }
+            }
           }
           lines.push(`**Run:** \`npx vitest run ${testInfo.test}\``);
           lines.push("");

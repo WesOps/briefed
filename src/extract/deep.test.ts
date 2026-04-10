@@ -202,12 +202,13 @@ describe("getGitSignals", () => {
 });
 
 describe("buildDeepRules", () => {
-  it("returns empty map when no annotations", () => {
+  it("returns empty map when no danger zones", () => {
+    // Rules are now danger-zone-only; no danger zones = no rules (except arch-index)
     const rules = buildDeepRules([], new Map());
     expect(rules.size).toBe(0);
   });
 
-  it("groups annotated symbols by directory into one rule file per dir", () => {
+  it("emits rule files only for directories with danger zones", () => {
     const extractions = [
       makeExt("src/a.ts", [makeSym("foo", 1)]),
       makeExt("src/b.ts", [makeSym("bar", 1)]),
@@ -218,53 +219,44 @@ describe("buildDeepRules", () => {
       ["src/b.ts", new Map([["bar", "does bar"]])],
       ["lib/c.ts", new Map([["baz", "does baz"]])],
     ]);
-    const rules = buildDeepRules(extractions, annotations);
-    expect(rules.size).toBe(2); // src/ and lib/
-    expect([...rules.keys()].some((k) => k.startsWith("briefed-deep-src"))).toBe(true);
-    expect([...rules.keys()].some((k) => k.startsWith("briefed-deep-lib"))).toBe(true);
+    // Only src/a.ts has a danger zone
+    const dangerZones = new Map([
+      ["src/a.ts", new Map([["foo", "callers depend on return shape"]])],
+    ]);
+    const rules = buildDeepRules(extractions, annotations, new Map(), [], undefined, dangerZones);
+    // Only src/ gets a rule (has danger), lib/ does not
+    const ruleKeys = [...rules.keys()].filter(k => !k.includes("arch-index"));
+    expect(ruleKeys.length).toBe(1);
+    expect(ruleKeys[0]).toContain("src");
   });
 
-  it("includes path-scoped frontmatter", () => {
+  it("includes path-scoped frontmatter and terse danger format", () => {
     const extractions = [makeExt("src/a.ts", [makeSym("foo", 1)])];
     const annotations = new Map([["src/a.ts", new Map([["foo", "does foo"]])]]);
-    const rules = buildDeepRules(extractions, annotations);
-    const content = [...rules.values()][0];
+    const dangerZones = new Map([["src/a.ts", new Map([["foo", "callers depend on return value"]])]]);
+    const rules = buildDeepRules(extractions, annotations, new Map(), [], undefined, dangerZones);
+    const content = [...rules.values()].find(v => v.includes("foo"));
+    expect(content).toBeDefined();
     expect(content).toContain("---");
     expect(content).toContain('paths:');
     expect(content).toContain('- "src/**"');
+    expect(content).toContain("callers depend on return value");
+    expect(content).toContain("briefed_symbol");
   });
 
-  it("skips files without annotations", () => {
-    const extractions = [
-      makeExt("src/a.ts", [makeSym("foo", 1)]),
-      makeExt("src/b.ts", [makeSym("bar", 1)]),
-    ];
-    const annotations = new Map([["src/a.ts", new Map([["foo", "does foo"]])]]);
-    const rules = buildDeepRules(extractions, annotations);
-    const content = [...rules.values()][0];
-    expect(content).toContain("foo");
-    expect(content).toContain("does foo");
-    expect(content).not.toContain("bar");
+  it("does not include descriptions or callers in rule files", () => {
+    const extractions = [makeExt("src/a.ts", [makeSym("foo", 1, { exported: true, calls: ["bar"] })])];
+    const annotations = new Map([["src/a.ts", new Map([["foo", "does foo things"]])]]);
+    const dangerZones = new Map([["src/a.ts", new Map([["foo", "danger info"]])]]);
+    const rules = buildDeepRules(extractions, annotations, new Map(), [], undefined, dangerZones);
+    const content = [...rules.values()].find(v => v.includes("foo"));
+    expect(content).toBeDefined();
+    // Descriptions and call details should NOT be in rules (moved to MCP)
+    expect(content).not.toContain("does foo things");
+    expect(content).not.toContain("calls:");
   });
 
-  it("includes danger zone lines for symbols with danger annotations", () => {
-    const ext = makeExt("src/auth/session.ts", [
-      makeSym("createSession", 10, { exported: true, calls: ["validate"] }),
-    ]);
-    const annotations = new Map([
-      ["src/auth/session.ts", new Map([["createSession", "creates user session with JWT"]])],
-    ]);
-    const dangerZones = new Map([
-      ["src/auth/session.ts", new Map([["createSession", "middleware depends on JWT shape; test asserts expiry"]])],
-    ]);
-    const rules = buildDeepRules([ext], annotations, new Map(), [], undefined, dangerZones);
-    const ruleContent = [...rules.values()].find(v => v.includes("session.ts"));
-    expect(ruleContent).toBeDefined();
-    expect(ruleContent).toContain("DANGER:");
-    expect(ruleContent).toContain("middleware depends on JWT shape");
-  });
-
-  it("omits danger line when no danger annotation exists", () => {
+  it("omits rule file when no danger annotation exists for directory", () => {
     const ext = makeExt("src/utils/hash.ts", [
       makeSym("hashPassword", 5, { exported: true }),
     ]);
@@ -272,8 +264,7 @@ describe("buildDeepRules", () => {
       ["src/utils/hash.ts", new Map([["hashPassword", "hashes with bcrypt"]])],
     ]);
     const rules = buildDeepRules([ext], annotations, new Map(), [], undefined, new Map());
-    const ruleContent = [...rules.values()].find(v => v.includes("hash.ts"));
-    expect(ruleContent).toBeDefined();
-    expect(ruleContent).not.toContain("DANGER:");
+    const ruleKeys = [...rules.keys()].filter(k => !k.includes("arch-index"));
+    expect(ruleKeys.length).toBe(0);
   });
 });

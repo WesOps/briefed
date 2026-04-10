@@ -391,53 +391,33 @@ export function buildDeepRules(
     }
   }
 
-  // Group annotated files by directory
-  type FileEntry = {
-    file: string;
-    symbols: Array<{
-      name: string;
-      sig: string;
-      desc: string;
-      danger?: string;
-      calls?: string[];
-      throws?: string[];
-      callers?: string[];
-    }>;
-  };
-  const byDir = new Map<string, FileEntry[]>();
+  // Collect danger zones per directory — ONLY emit rule files for dirs
+  // that have at least one danger annotation. No danger = no rule file.
+  // Rule files are fire alarms, not documentation.
+  const dangersByDir = new Map<string, Array<{ file: string; name: string; danger: string }>>();
 
   for (const ext of extractions) {
-    const fileAnns = annotations.get(ext.path);
-    if (!fileAnns || fileAnns.size === 0) continue;
+    const fileDangers = dangerZones.get(ext.path);
+    if (!fileDangers || fileDangers.size === 0) continue;
 
     const dir = dirname(ext.path);
-    if (!byDir.has(dir)) byDir.set(dir, []);
+    if (!dangersByDir.has(dir)) dangersByDir.set(dir, []);
 
-    const syms: FileEntry["symbols"] = [];
     for (const sym of ext.symbols) {
-      const desc = fileAnns.get(sym.name);
-      if (desc) {
-        // Callers: look up "filepath#symbolName" in depGraph.symbolRefs
-        const callerKey = `${ext.path}#${sym.name}`;
-        const callers = callersBySymbol.get(callerKey);
-        const danger = dangerZones.get(ext.path)?.get(sym.name);
-        syms.push({
+      const danger = fileDangers.get(sym.name);
+      if (danger) {
+        dangersByDir.get(dir)!.push({
+          file: ext.path.split("/").pop() || ext.path,
           name: sym.name,
-          sig: sym.signature,
-          desc,
           danger,
-          calls: sym.calls?.slice(0, 5),
-          throws: sym.throws?.slice(0, 5),
-          callers: callers?.map(c => c.split("/").pop() || c),
         });
       }
     }
-    if (syms.length > 0) {
-      byDir.get(dir)!.push({ file: ext.path, symbols: syms });
-    }
   }
 
-  for (const [dir, files] of byDir) {
+  // Emit terse, imperative danger-zone-only rule files.
+  // ~50-100 tokens each. Descriptions, callers, tests → MCP tools.
+  for (const [dir, dangers] of dangersByDir) {
     const safeDir = dir.replace(/[\/\\]/g, "-").replace(/^-/, "") || "root";
     const fileName = `briefed-deep-${safeDir}.md`;
 
@@ -446,69 +426,39 @@ export function buildDeepRules(
     lines.push("paths:");
     lines.push(`  - "${dir}/**"`);
     lines.push("---");
-    lines.push("");
-    lines.push(`# ${dir}/ — behavioral context`);
-    lines.push("");
-    const boundary = directoryBoundaries.get(dir);
-    if (boundary) {
-      lines.push(`> ${boundary}`);
-      lines.push("");
+
+    // One paragraph per danger zone — terse, imperative
+    for (const d of dangers) {
+      lines.push(`\u26A0 ${d.file}:${d.name} — ${d.danger}`);
     }
-    for (const entry of files) {
-      const fname = entry.file.split("/").pop() || entry.file;
-      lines.push(`## ${fname}`);
-      for (const sym of entry.symbols) {
-        lines.push(`- **${sym.name}**: ${sym.desc}`);
-        if (sym.calls && sym.calls.length > 0) {
-          lines.push(`  - calls: ${sym.calls.join(", ")}`);
-        }
-        if (sym.throws && sym.throws.length > 0) {
-          lines.push(`  - throws: ${sym.throws.join(", ")}`);
-        }
-        if (sym.callers && sym.callers.length > 0) {
-          lines.push(`  - called by: ${sym.callers.join(", ")}`);
-        }
-        if (sym.danger) {
-          lines.push(`  - \u26A0 DANGER: ${sym.danger}`);
-        }
-      }
-      const testNames = testNamesByFile.get(entry.file);
-      if (testNames && testNames.length > 0) {
-        lines.push(`- Tests: ${testNames.map(n => `"${n}"`).join(", ")}`);
-        const fileAssertions = testAssertionsByFile.get(entry.file);
-        if (fileAssertions) {
-          const assertionSummary: string[] = [];
-          for (const tName of testNames.slice(0, 3)) {
-            const asserts = fileAssertions.get(tName);
-            if (asserts && asserts.length > 0) {
-              assertionSummary.push(...asserts.slice(0, 2));
-            }
-          }
-          if (assertionSummary.length > 0) {
-            lines.push(`  - expects: ${assertionSummary.join("; ")}`);
-          }
-        }
-      }
-      lines.push("");
-    }
+    lines.push("");
+    lines.push(`Use \`briefed_symbol\` for full details before editing.`);
 
     rules.set(fileName, lines.join("\n"));
   }
 
-  // Global architectural index — always loaded, lists every annotated directory
-  // with its boundary description. Helps the model route issues to the right place
-  // before it even opens a file.
+  // Global architectural index — capped at 30 entries, one line each.
+  // Always loaded. Helps route issues to the right directory.
+  const MAX_ARCH_ENTRIES = 30;
   if (directoryBoundaries.size >= 2) {
+    // Rank directories by number of annotated symbols (proxy for importance)
+    const dirImportance = new Map<string, number>();
+    for (const [filePath, fileAnns] of annotations) {
+      const dir = dirname(filePath);
+      dirImportance.set(dir, (dirImportance.get(dir) || 0) + fileAnns.size);
+    }
+
+    const topDirs = [...directoryBoundaries.entries()]
+      .sort((a, b) => (dirImportance.get(b[0]) || 0) - (dirImportance.get(a[0]) || 0))
+      .slice(0, MAX_ARCH_ENTRIES);
+
     const indexLines: string[] = [];
-    indexLines.push("# Codebase architecture — directory boundaries");
+    indexLines.push("# Architecture — directory map");
     indexLines.push("");
-    indexLines.push("Use this map to route bug fixes and features to the correct directory.");
-    indexLines.push("When an issue description mentions a concept, find the directory responsible for it here.");
-    indexLines.push("");
-    for (const [dir, desc] of [...directoryBoundaries.entries()].sort()) {
-      indexLines.push(`## ${dir}/`);
-      indexLines.push(desc);
-      indexLines.push("");
+    for (const [dir, desc] of topDirs) {
+      // Strip "NOT responsible for" clauses — keep only the positive description
+      const positive = desc.replace(/\s*(?:NOT |—\s*not )responsible for[^.]*\.?/gi, "").trim();
+      indexLines.push(`- **${dir}/**: ${positive}`);
     }
     rules.set("briefed-deep-arch-index.md", indexLines.join("\n"));
   }
