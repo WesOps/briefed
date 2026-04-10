@@ -301,7 +301,7 @@ process.stdin.on("end", () => {
     function loadRelated(mod, label, field) {
       const contractText = safeRead(join(contractsDir, mod.file));
       if (!contractText) return;
-      const lines = contractText.split('\n');
+      const lines = contractText.split('\\n');
       const headerIdx = lines.indexOf(field + ':');
       if (headerIdx === -1) return;
       const names = [];
