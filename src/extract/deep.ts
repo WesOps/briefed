@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname, basename } from "path";
-import { spawnSync } from "child_process";
+import { spawnSync, spawn } from "child_process";
 import { createHash } from "crypto";
 import { debug } from "../utils/log.js";
 import { computePersonalizedPageRank } from "../utils/pagerank.js";
@@ -235,59 +235,60 @@ export async function runDeepAnalysis(
     );
   }
 
-  // Batch-annotate the misses
+  // Batch-annotate the misses — run up to PARALLEL_BATCHES concurrent claude calls.
+  // Each batch is independent (different files), so parallelism is safe.
+  const allBatches: { batch: FileExtraction[]; prompt: string; model: "haiku" | "sonnet" }[] = [];
   for (let i = 0; i < misses.length; i += BATCH_SIZE) {
     const batch = misses.slice(i, i + BATCH_SIZE);
     const prompt = buildBatchPrompt(batch, root, scoreMap, criticalCutoff, peripheralCutoff, depGraph, testMappings);
     if (!prompt) continue;
-
-    // Use Sonnet for batches that contain critical-tier files (top 20% by score)
-    // — those are the complex, high-fanin files where bugs actually live and where
-    // a precise 22-word description is meaningfully better than a vague one.
-    // Peripheral and normal files use Haiku; annotations are cached so cost is one-time.
     const hasCritical = criticalCutoff !== undefined &&
       batch.some(ext => (scoreMap?.get(ext.path) ?? 0) >= criticalCutoff);
-    const annotationModel = hasCritical ? "sonnet" : "haiku";
+    allBatches.push({ batch, prompt, model: hasCritical ? "sonnet" : "haiku" });
+  }
 
-    const raw = runClaudeJson(claudePath, prompt, root, annotationModel);
-    if (!raw) continue;
+  for (let i = 0; i < allBatches.length; i += PARALLEL_BATCHES) {
+    const chunk = allBatches.slice(i, i + PARALLEL_BATCHES);
+    const results = await Promise.all(
+      chunk.map(({ prompt, model }) => runClaudeJsonAsync(claudePath, prompt, root, model)),
+    );
 
-    const { descriptions: parsed, dangerZones: batchDangers } = parseBatchResponse(raw);
-    for (const ext of batch) {
-      const fileAnnotations = parsed.get(ext.path) || new Map<string, string>();
-      if (fileAnnotations.size === 0) continue;
+    for (let j = 0; j < chunk.length; j++) {
+      const raw = results[j];
+      if (!raw) continue;
+      const { batch } = chunk[j];
 
-      // Merge into the live map
-      const existing = annotations.get(ext.path) || new Map();
-      for (const [name, desc] of fileAnnotations) {
-        existing.set(name, desc);
-        freshAnnotations++;
-      }
-      annotations.set(ext.path, existing);
+      const { descriptions: parsed, dangerZones: batchDangers } = parseBatchResponse(raw);
+      for (const ext of batch) {
+        const fileAnnotations = parsed.get(ext.path) || new Map<string, string>();
+        if (fileAnnotations.size === 0) continue;
 
-      // Merge danger zones
-      const fileDangers = batchDangers.get(ext.path);
-      if (fileDangers && fileDangers.size > 0) {
-        const existingDangers = allDangerZones.get(ext.path) || new Map();
-        for (const [name, danger] of fileDangers) {
-          existingDangers.set(name, danger);
+        const existing = annotations.get(ext.path) || new Map();
+        for (const [name, desc] of fileAnnotations) {
+          existing.set(name, desc);
+          freshAnnotations++;
         }
-        allDangerZones.set(ext.path, existingDangers);
-        if (cache.files[ext.path]) {
-          cache.files[ext.path].dangerZones = Object.fromEntries(existingDangers);
-        }
-      }
+        annotations.set(ext.path, existing);
 
-      // Update cache entry
-      const content = safeRead(join(root, ext.path));
-      if (content) {
-        cache.files[ext.path] = {
-          hash: hashFileForCache(content, ext.symbols),
-          annotations: Object.fromEntries(existing),
-          ...(allDangerZones.has(ext.path) && {
-            dangerZones: Object.fromEntries(allDangerZones.get(ext.path)!),
-          }),
-        };
+        const fileDangers = batchDangers.get(ext.path);
+        if (fileDangers && fileDangers.size > 0) {
+          const existingDangers = allDangerZones.get(ext.path) || new Map();
+          for (const [name, danger] of fileDangers) {
+            existingDangers.set(name, danger);
+          }
+          allDangerZones.set(ext.path, existingDangers);
+        }
+
+        const content = safeRead(join(root, ext.path));
+        if (content) {
+          cache.files[ext.path] = {
+            hash: hashFileForCache(content, ext.symbols),
+            annotations: Object.fromEntries(existing),
+            ...(allDangerZones.has(ext.path) && {
+              dangerZones: Object.fromEntries(allDangerZones.get(ext.path)!),
+            }),
+          };
+        }
       }
     }
   }
@@ -857,6 +858,60 @@ function runClaudeJson(
     return null;
   }
 }
+
+/**
+ * Async version of runClaudeJson — runs claude -p without blocking the event
+ * loop, enabling parallel batch annotation.
+ */
+function runClaudeJsonAsync(
+  claudePath: string,
+  prompt: string,
+  cwd: string,
+  model: "haiku" | "sonnet" | "opus" = "haiku",
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const child = spawn(
+        claudePath,
+        ["-p", "-", "--output-format", "text", "--model", model],
+        { cwd, stdio: ["pipe", "pipe", "pipe"] },
+      );
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+      child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+
+      const timer = setTimeout(() => {
+        child.kill("SIGTERM");
+        debug("deep: claude timed out");
+        resolve(null);
+      }, CLAUDE_TIMEOUT_MS);
+
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        debug(`deep: claude spawn error: ${err.message}`);
+        resolve(null);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          debug(`deep: claude exited ${code}: ${stderr.slice(0, 200)}`);
+          resolve(null);
+        } else {
+          resolve(stdout.trim() || null);
+        }
+      });
+
+      child.stdin.write(prompt);
+      child.stdin.end();
+    } catch (e) {
+      debug(`deep: runClaudeAsync threw: ${(e as Error).message}`);
+      resolve(null);
+    }
+  });
+}
+
+const PARALLEL_BATCHES = 3;
 
 interface BatchParseResult {
   descriptions: Map<string, Map<string, string>>;
