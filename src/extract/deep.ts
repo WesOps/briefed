@@ -239,7 +239,8 @@ export async function runDeepAnalysis(
     const raw = runClaudeJson(claudePath, prompt, root, annotationModel);
     if (!raw) continue;
 
-    const parsed = parseBatchResponse(raw);
+    const { descriptions: parsed, dangerZones: batchDangers } = parseBatchResponse(raw);
+    void batchDangers; // Task 5 will use this
     for (const ext of batch) {
       const fileAnnotations = parsed.get(ext.path) || new Map<string, string>();
       if (fileAnnotations.size === 0) continue;
@@ -731,8 +732,14 @@ function runClaudeJson(
   }
 }
 
-function parseBatchResponse(raw: string): Map<string, Map<string, string>> {
-  const result = new Map<string, Map<string, string>>();
+interface BatchParseResult {
+  descriptions: Map<string, Map<string, string>>;
+  dangerZones: Map<string, Map<string, string>>;
+}
+
+function parseBatchResponse(raw: string): BatchParseResult {
+  const descriptions = new Map<string, Map<string, string>>();
+  const dangerZones = new Map<string, Map<string, string>>();
 
   // Claude sometimes wraps JSON in ```json ... ``` fences. Strip them.
   const cleaned = raw
@@ -746,24 +753,44 @@ function parseBatchResponse(raw: string): Map<string, Map<string, string>> {
   } catch {
     // Fall back: try to extract a JSON object from the response
     const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) return result;
+    if (!match) return { descriptions, dangerZones };
     try {
       obj = JSON.parse(match[0]);
     } catch {
-      return result;
+      return { descriptions, dangerZones };
     }
   }
 
   for (const [key, value] of Object.entries(obj)) {
-    if (typeof value !== "string") continue;
+    let desc: string;
+    let danger: string | undefined;
+
+    if (typeof value === "string") {
+      desc = value.trim();
+    } else if (typeof value === "object" && value !== null && "description" in value) {
+      desc = String((value as Record<string, unknown>).description).trim();
+      const d = (value as Record<string, unknown>).danger;
+      if (typeof d === "string" && d.trim()) {
+        danger = d.trim();
+      }
+    } else {
+      continue;
+    }
+
     const sep = key.indexOf("::");
     if (sep === -1) continue;
     const file = key.slice(0, sep);
     const name = key.slice(sep + 2);
-    if (!result.has(file)) result.set(file, new Map());
-    result.get(file)!.set(name, value.trim());
+
+    if (!descriptions.has(file)) descriptions.set(file, new Map());
+    descriptions.get(file)!.set(name, desc);
+
+    if (danger !== undefined) {
+      if (!dangerZones.has(file)) dangerZones.set(file, new Map());
+      dangerZones.get(file)!.set(name, danger);
+    }
   }
-  return result;
+  return { descriptions, dangerZones };
 }
 
 async function generateSystemOverview(

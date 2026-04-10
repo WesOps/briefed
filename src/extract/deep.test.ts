@@ -52,7 +52,7 @@ describe("hashFileForCache", () => {
 describe("parseBatchResponse", () => {
   it("parses a clean JSON object", () => {
     const raw = '{"src/a.ts::foo": "does foo things", "src/a.ts::bar": "does bar things"}';
-    const result = parseBatchResponse(raw);
+    const { descriptions: result } = parseBatchResponse(raw);
     expect(result.size).toBe(1);
     expect(result.get("src/a.ts")!.get("foo")).toBe("does foo things");
     expect(result.get("src/a.ts")!.get("bar")).toBe("does bar things");
@@ -60,7 +60,7 @@ describe("parseBatchResponse", () => {
 
   it("strips markdown code fences", () => {
     const raw = '```json\n{"src/a.ts::foo": "does foo"}\n```';
-    const result = parseBatchResponse(raw);
+    const { descriptions: result } = parseBatchResponse(raw);
     expect(result.get("src/a.ts")!.get("foo")).toBe("does foo");
   });
 
@@ -70,7 +70,7 @@ describe("parseBatchResponse", () => {
       "src/a.ts::bar": "a bar",
       "src/b.ts::baz": "b baz",
     });
-    const result = parseBatchResponse(raw);
+    const { descriptions: result } = parseBatchResponse(raw);
     expect(result.size).toBe(2);
     expect(result.get("src/a.ts")!.size).toBe(2);
     expect(result.get("src/b.ts")!.size).toBe(1);
@@ -79,12 +79,12 @@ describe("parseBatchResponse", () => {
   it("recovers from surrounding prose", () => {
     const raw =
       'Here is the analysis:\n{"src/a.ts::foo": "does foo"}\nHope that helps!';
-    const result = parseBatchResponse(raw);
+    const { descriptions: result } = parseBatchResponse(raw);
     expect(result.get("src/a.ts")!.get("foo")).toBe("does foo");
   });
 
   it("returns empty map on malformed JSON", () => {
-    expect(parseBatchResponse("not json at all").size).toBe(0);
+    expect(parseBatchResponse("not json at all").descriptions.size).toBe(0);
   });
 
   it("ignores entries without the :: separator", () => {
@@ -92,9 +92,36 @@ describe("parseBatchResponse", () => {
       "malformed-key": "skipped",
       "src/a.ts::foo": "kept",
     });
-    const result = parseBatchResponse(raw);
+    const { descriptions: result } = parseBatchResponse(raw);
     expect(result.get("src/a.ts")!.get("foo")).toBe("kept");
     expect(result.has("malformed-key")).toBe(false);
+  });
+
+  it("parses {description, danger} object values for critical-tier symbols", () => {
+    const raw = JSON.stringify({
+      "src/a.ts::foo": {
+        description: "does foo things",
+        danger: "callers depend on return value being non-null",
+      },
+      "src/a.ts::bar": "does bar things",
+    });
+    const { descriptions: result } = parseBatchResponse(raw);
+    expect(result.get("src/a.ts")!.get("foo")).toBe("does foo things");
+    expect(result.get("src/a.ts")!.get("bar")).toBe("does bar things");
+  });
+
+  it("extracts danger zones into separate map", () => {
+    const raw = JSON.stringify({
+      "src/a.ts::foo": {
+        description: "does foo things",
+        danger: "callers depend on return value",
+      },
+      "src/a.ts::bar": "simple description",
+    });
+    const { descriptions, dangerZones } = parseBatchResponse(raw);
+    expect(descriptions.get("src/a.ts")!.get("foo")).toBe("does foo things");
+    expect(dangerZones.get("src/a.ts")!.get("foo")).toBe("callers depend on return value");
+    expect(dangerZones.get("src/a.ts")?.has("bar")).toBeFalsy();
   });
 });
 
