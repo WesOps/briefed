@@ -322,6 +322,40 @@ Total: ~270 lines of production code + tests. No deletions in this checkpoint.
 
 **If all three arms fail correctness:** The task rubric is too strict or the model's baseline is too weak. Not a briefed problem. Investigate rubric or bench config.
 
+## Product ladder (why this checkpoint matters)
+
+Tomorrow's routes checkpoint is the first rung of a three-rung product ladder. Each rung is independently shippable, and each depends on the rung below it succeeding in real use before the next is built.
+
+**Rung 1: `briefed explain` — diff-risk before push.**
+- Input: `git diff HEAD`
+- Output: impacted routes, tests to run, blast radius, schema/env deltas, invariants at risk
+- Why first: clearest pain, lowest platform risk, best demo, daily trigger (every `git push`). This is the wedge.
+- The routes checkpoint tomorrow validates the substrate's ability to produce one slice of this output (routes) via a reliable delivery channel. Falsifies or validates the whole ladder.
+
+**Rung 2: `briefed replay` — session transcript analysis.**
+- Input: a saved `claude -p` stream-json transcript
+- Output: wasted reads, files touched, patches applied, what changed, what should have been checked
+- Why second: transcript capture already landed today as part of the polybench harness. Substrate is free. But only worth building if rung 1 has traction — otherwise we're adding surface to a dead product.
+- Not tomorrow's scope. Not this week's scope. After rung 1 dogfoods successfully for 2 weeks.
+
+**Rung 3: `briefed guard` — live enforcement.**
+- Input: in-session signals (about-to-read, about-to-edit, file-read-count-exceeded)
+- Output: injected warnings or hard stops before the agent burns turns
+- Why third: needs evidence that rungs 1 and 2 are useful before we invest in the harder runtime integration. Live enforcement is the most platform-dependent and most likely to be absorbed by Anthropic or Cursor if the category proves out.
+- Only built if rungs 1 and 2 have clear pull.
+
+**What this ladder rules out:**
+- "Claude Code++" positioning. Platform risk, gets absorbed.
+- "Context engine" positioning. Crowded, no moat.
+- "Answer appliances for orientation tasks." Useful for bench validation, not a standalone product.
+- "Change map" as the first product. Speculative retrieval layer on top of no proven delivery. Build it as part of rung 1's output, not as the standalone pitch.
+
+**The product contract, final form:**
+
+> briefed sits between the developer and their AI-assisted changes. It tells you what's about to break, what to verify, what you missed, and what the agent wasted time on — deterministically, with evidence, before you ship.
+
+Rung 1 is the first proof. Tomorrow's checkpoint is the first proof of rung 1's substrate.
+
 ## Phase 3 target — what the routes checkpoint is actually for
 
 The routes checkpoint is not the product. It is the minimum falsifiable test of the answer-appliance delivery channel. The actual market moat — the thing that differentiates briefed from Aider repo maps, Cursor indexing, Cody semantic search, and Sourcegraph code graph — is a **repo-specific change map**, not a repo-specific knowledge base.
