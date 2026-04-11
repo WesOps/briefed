@@ -117,6 +117,10 @@ export interface CellResult {
   error: string | null;
   /** True if this cell was loaded from an existing predictions file (resume). */
   skipped: boolean;
+  /** Relative path to the saved stream-json transcript (if saved). */
+  transcriptPath?: string;
+  /** SHA256 of the transcript for tamper-evident provenance. */
+  transcriptSha256?: string;
 }
 
 /** Aggregated results for one arm after a polybench run finishes. */

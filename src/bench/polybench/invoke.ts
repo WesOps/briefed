@@ -111,27 +111,39 @@ export function runClaudeOnTask(
   let inputTokens = 0;
   let outputTokens = 0;
 
-  // stream-json emits one JSON event per line; scan all lines for the last
-  // "result" event. This works even on timeout — whatever was flushed before
-  // SIGTERM is still in stdout, and intermediate events are line-buffered.
+  // Token accounting is CUMULATIVE across every assistant event in the
+  // stream. The final `result` event in Claude Code's stream-json only
+  // reports the LAST turn's usage, not the session total — summing across
+  // assistant events is the only way to get real per-session totals.
+  // cost_usd and num_turns still come from the final result event (those
+  // ARE cumulative in the API response).
   for (const line of stdout.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
       const event = JSON.parse(trimmed) as Record<string, unknown>;
-      if (event.type !== "result") continue;
-      const cost = event.cost_usd ?? event.total_cost_usd;
-      if (typeof cost === "number" && Number.isFinite(cost)) costUsd = cost;
-      const turns = event.num_turns;
-      if (typeof turns === "number" && Number.isFinite(turns)) numTurns = turns;
-      const usage = event.usage as Record<string, unknown> | undefined;
-      if (usage) {
-        const inp = (usage.input_tokens as number) || 0;
-        const cacheCreate = (usage.cache_creation_input_tokens as number) || 0;
-        const cacheRead = (usage.cache_read_input_tokens as number) || 0;
-        const out = usage.output_tokens;
-        inputTokens = inp + cacheCreate + cacheRead;
-        if (typeof out === "number" && Number.isFinite(out)) outputTokens = out;
+
+      // Per-turn usage from each assistant message
+      if (event.type === "assistant") {
+        const message = event.message as Record<string, unknown> | undefined;
+        const usage = message?.usage as Record<string, unknown> | undefined;
+        if (usage) {
+          const inp = (usage.input_tokens as number) || 0;
+          const cacheCreate = (usage.cache_creation_input_tokens as number) || 0;
+          const cacheRead = (usage.cache_read_input_tokens as number) || 0;
+          const out = (usage.output_tokens as number) || 0;
+          inputTokens += inp + cacheCreate + cacheRead;
+          outputTokens += out;
+        }
+        continue;
+      }
+
+      // Session totals from the final result event
+      if (event.type === "result") {
+        const cost = event.cost_usd ?? event.total_cost_usd;
+        if (typeof cost === "number" && Number.isFinite(cost)) costUsd = cost;
+        const turns = event.num_turns;
+        if (typeof turns === "number" && Number.isFinite(turns)) numTurns = turns;
       }
     } catch {
       // non-JSON line (e.g. partial write at kill time) — skip

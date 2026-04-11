@@ -22,6 +22,7 @@
  */
 
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { createHash } from "crypto";
 import { resolve, join } from "path";
 import { findClaude } from "../shared.js";
 import { cloneTask, commitBaseState } from "./clone.js";
@@ -363,14 +364,17 @@ async function runOneCell(
   cell.inputTokens = runResult.inputTokens;
   cell.outputTokens = runResult.outputTokens;
 
-  // Save transcript for post-run analysis
+  // Save transcript for post-run analysis + record path/hash for provenance
   if (runResult.stdout) {
-    const transcriptDir = join(resolve(opts.outputDir), "transcripts", cell.arm);
+    const outputDirAbs = resolve(opts.outputDir);
+    const transcriptDir = join(outputDirAbs, "transcripts", cell.arm);
     mkdirSync(transcriptDir, { recursive: true });
-    writeFileSync(
-      join(transcriptDir, `${task.instanceId}.jsonl`),
-      runResult.stdout,
-    );
+    const transcriptFile = join(transcriptDir, `${task.instanceId}.jsonl`);
+    writeFileSync(transcriptFile, runResult.stdout);
+    cell.transcriptPath = transcriptFile.startsWith(outputDirAbs + "/")
+      ? transcriptFile.slice(outputDirAbs.length + 1)
+      : transcriptFile;
+    cell.transcriptSha256 = createHash("sha256").update(runResult.stdout).digest("hex");
   }
 
   // 5. Capture filtered diff (source-only)
