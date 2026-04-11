@@ -272,18 +272,33 @@ Implement exactly the check defined in the "Hard preflight gate" section above. 
 
 ---
 
+## Tomorrow's bar (anti-drift discipline)
+
+Tomorrow is allowed to be ugly. Do NOT build a reusable appliance framework. Do NOT abstract. Do NOT generalize. Get ONE routes artifact into the A/B/C experiment with the minimum code necessary and force the verdict. Anything more elaborate is drift.
+
+**Five actions, in order. Nothing else.**
+
+1. `git checkout -b feat/v2-routes-checkpoint` — branch FIRST, before any code changes. This is the first command of the day. (The spec doc was committed to main; that was docs only and does not count as drift, but tomorrow's code does not land on main.)
+2. Generate the answer-shaped routes table (step 1 + step 2 of the build order).
+3. Preflight against the rubric terms from `quality-tasks.ts:56` — fail hard on any miss.
+4. Run A/B/C on `list-routes` only.
+5. Stop the moment the verdict is clear. Read the gates. Decide next action.
+
+If you find yourself building anything that isn't in those five steps — refactoring, adding a helper, preparing for the next appliance, cleaning up an unrelated file — stop. That's drift. The whole reason today failed was building before proving.
+
 ## Order of operations
 
-1. **Step 1 first** (routes formatter). Can't test or measure anything without it.
-2. **Step 2 immediately after** (lock the shape with tests). Preflight gate hangs off this data.
-3. **Run the test suite locally.** All 311 existing tests must still pass. New routes tests must pass with the epic-stack fixture.
-4. **Step 3** (init wiring). Smoke test: run `briefed init --repo /tmp/epic-stack` and verify `.briefed/artifacts/routes.md` exists and contains the rubric terms.
-5. **Step 4** (CLAUDE.md inlining). Smoke test: verify CLAUDE.md now has the `## Routes` section with the table.
-6. **Step 5** (preflight gate). Run the preflight manually against `/tmp/epic-stack` — if the gate passes, the bench run will be measuring something real.
-7. **Step 6** (arm C prepend). Do this LAST so arms A and B can run even if C is broken.
-8. **Commit after each step.** If step 5 breaks step 4's tests, the bisect is trivial.
-9. **Run the three-arm bench on `list-routes` ONLY.** Not the full quality task set. One task. ~5 minutes of claude time per arm, total ~15 minutes plus init overhead.
-10. **Read the verdict:** gates 1/2/3 above.
+1. **Step 0: create the branch** — `git checkout -b feat/v2-routes-checkpoint` from current main. This must happen before any code changes. No code on main.
+2. **Step 1** (routes formatter). Can't test or measure anything without it.
+3. **Step 2** (lock the shape with tests). Preflight gate hangs off this data.
+4. **Run the test suite locally.** All 311 existing tests must still pass. New routes tests must pass with the epic-stack fixture.
+5. **Step 3** (init wiring). Smoke test: run `briefed init --repo /tmp/epic-stack` and verify `.briefed/artifacts/routes.md` exists and contains the rubric terms.
+6. **Step 4** (CLAUDE.md inlining). Smoke test: verify CLAUDE.md now has the `## Routes` section with the table.
+7. **Step 5** (preflight gate). Run the preflight manually against `/tmp/epic-stack` — if the gate passes, the bench run will be measuring something real.
+8. **Step 6** (arm C prepend). Do this LAST so arms A and B can run even if C is broken.
+9. **Commit after each step.** If step 5 breaks step 4's tests, the bisect is trivial.
+10. **Run the three-arm bench on `list-routes` ONLY.** Not the full quality task set. One task. ~5 minutes of claude time per arm, total ~15 minutes plus init overhead.
+11. **Read the verdict:** gates 1/2/3 above. Stop the moment the result is clear. Do not start appliance #2 the same day.
 
 ## Estimated scope
 
@@ -311,14 +326,14 @@ Total: ~270 lines of production code + tests. No deletions in this checkpoint.
 
 The routes checkpoint is not the product. It is the minimum falsifiable test of the answer-appliance delivery channel. The actual market moat — the thing that differentiates briefed from Aider repo maps, Cursor indexing, Cody semantic search, and Sourcegraph code graph — is a **repo-specific change map**, not a repo-specific knowledge base.
 
-A change map, given a bug/feature description, produces deterministically:
+A change map, given a bug/feature description, produces:
 
-1. **Likely edit targets** — BM25-matched files ranked by issue-term overlap with symbol names, docs, and nearby identifiers. Top 3-5, with scores.
-2. **Invariants each edit target maintains** — from static analysis: return type contracts, null/throw signaling conventions, required state. No LLM speculation.
-3. **Tests that cover each target** — from test-map. Names + assertion extraction.
-4. **Blast radius** — from dep graph BFS. Direct + transitive importers.
+1. **Likely edit targets** — BM25-matched files ranked by issue-term overlap with symbol names, docs, and nearby identifiers. Top 3-5, with scores. **This is retrieval/ranking, not deterministic.** Sell it as an evidence-backed candidate set with confidence scores, not 100% recall. Wrong rank is the failure mode.
+2. **Invariants each edit target maintains** — from static analysis: return type contracts, null/throw signaling conventions, required state. Deterministic.
+3. **Tests that cover each target** — from test-map. Names + assertion extraction. Deterministic.
+4. **Blast radius** — from dep graph BFS. Direct + transitive importers. Deterministic.
 
-No LLM at any step. Everything already computable from existing extractors.
+Three of four components are deterministic. The first is the fuzzy one and we should be honest about it — the retrieval ranking has to be evidence-backed (BM25 over structured fields, with scores shown) and transparent about confidence so agents don't treat rank #1 as gospel. The defensibility of the product depends on (2)–(4) being rigorously correct and (1) being well-calibrated, not magically right.
 
 **Why this is the moat:**
 
