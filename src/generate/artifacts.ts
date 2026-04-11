@@ -106,7 +106,13 @@ export function buildEnvAudit(root: string, vars: EnvVar[]): string {
 
 // ─── auth context ─────────────────────────────────────────────────────────────
 
-const AUTH_FILE_RE = /(?:auth|session|login|password|user|token|oauth|credential)/i;
+// Word-boundary-ish: require the auth keyword to NOT be followed by another
+// letter, so "tokens.ts" (tokenizer utilities), "user-agent.ts" (HTTP plumbing),
+// and similar don't get swept in. Still matches "auth.ts", "authService.ts" (the
+// "auth" prefix is followed by a capital, which /i treats the same but the
+// boundary rule here uses [^a-z] under case-insensitive matching to exclude
+// only same-word continuations).
+const AUTH_FILE_RE = /(?:auth|session|login|password|oauth|credential)(?![a-z])/i;
 
 /**
  * Build an auth context artifact: auth-related files and session/auth tables.
