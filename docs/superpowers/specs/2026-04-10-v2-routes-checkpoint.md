@@ -18,7 +18,7 @@ Today's iteration cycle failed because four independent failures were conflated 
 | **1. MCP non-use** | Zero `mcp__briefed_*` calls in any 2026-04-10 transcript. `metrics.ts:108` would have counted them. Model does not voluntarily use briefed tools. | **Isolated out.** Neither arm B nor C depends on MCP. |
 | **2. Hook non-exercise in bench** | Zero UserPromptSubmit events in 208 transcript lines on v1.4c despite `hooks.ts:68` installing the hook unconditionally. Strong but not proof-of-all-sessions. | **Isolated out.** Hooks stay installed for real Claude Code sessions but bench measurement treats them as invisible. |
 | **3. Content selection missing relevant surfaces** | `suggestModel.ts:retrigger` was never in the v1.4c danger zone set despite being the exact symbol needing the warning. PageRank + churn + complexity heuristic ranked it out of critical tier. Even perfect delivery would have injected irrelevant content. | **Eliminated by construction.** Appliances are structured-data dumps — routes are either all present or extraction is broken. No "did we pick the right file" question. |
-| **4. Wasteful navigation** | 37% of v1.4c turns were redundant reads of the same file at different offsets + 5x duplicate `git show` of the same commit. Claude Code exploration pattern, not a briefed problem. | **Short-circuited.** If the answer is in CLAUDE.md, the model never enters the wasteful-read loop. |
+| **4. Wasteful navigation** | 37% of v1.4c turns were redundant reads of the same file at different offsets + 5x duplicate `git show` of the same commit. Claude Code exploration pattern, not a briefed problem. | **Short-circuited only if the artifact is answer-shaped.** If the appliance is knowledge-shaped (a graph, a list requiring synthesis, prose describing the routes instead of the route table itself), the model will still wander because it must transform the content before responding. Mode 4 is as much a content-shape failure as a Claude failure. The routes appliance MUST look like the final output the task rubric asks for: a markdown table with Route / Method / Purpose / File columns — not a YAML blob or a prose summary. |
 
 **Why this makes the three-arm checkpoint the correct test:**
 
@@ -32,16 +32,58 @@ The key insight: **you cannot diagnose mode 3 until you neutralize modes 1 and 2
 
 A three-arm experiment on a single task (`list-routes`) answers two questions in one run:
 
-- **Does guaranteed delivery matter for bench?** (C vs B)
 - **Does the answer-appliance content actually delete search steps?** (B vs A)
+- **Does context positioned in the task prompt outperform context positioned in CLAUDE.md?** (C vs B)
 
 Arms:
 
 - **A: baseline** — no briefed at all
 - **B: static CLAUDE.md only** — routes appliance inlined in CLAUDE.md, no hooks, no MCP, no dynamic anything
-- **C: static + adapter prepend** — same as B plus the polybench adapter prepends the matched route block directly to the task prompt before invoking `claude -p`
+- **C: static + adapter prepend** — same as B plus the polybench adapter prepends the exact same routes content directly to the task prompt before invoking `claude -p`
 
-### Go/no-go after this checkpoint
+**What C is NOT testing.** C is not a hooks test. Both B and C bypass hooks and MCP entirely — they differ only in *where* the same content appears. B relies on session-start context (CLAUDE.md is confirmed present in quality bench via `src/bench/quality.ts:351`). C puts the content inside the task prompt itself. So C measures salience/positioning, not delivery: "does prompt-adjacent context outperform session-start context when both reach the model reliably?"
+
+## Hard preflight gate (before any `claude -p` invocation)
+
+Before the bench is allowed to spend a single dollar on a claude call, the generated routes artifact MUST pass a byte-level check against the task rubric in `src/bench/quality-tasks.ts:56`. This is a non-negotiable abort — no warnings, no soft failures.
+
+**Required check:**
+
+```typescript
+// In src/bench/quality.ts, before the arm execution loop starts:
+const routesArtifact = readFileSync(join(corpusRoot, ".briefed/artifacts/routes.md"), "utf-8");
+const listRoutesTask = QUALITY_TASKS.find(t => t.name === "list-routes")!;
+
+// Every mustContain term from quality-tasks.ts:56 must appear verbatim in the artifact.
+const missing = listRoutesTask.rubric.mustContain.filter(term => !routesArtifact.includes(term));
+if (missing.length > 0) {
+  throw new Error(
+    `Preflight FAILED: routes artifact is missing required terms: ${missing.join(", ")}. ` +
+    `The bench would waste money on arms that cannot possibly pass. Fix extraction first.`
+  );
+}
+
+// No mustNotHallucinate term from quality-tasks.ts:66 may appear.
+const hallucinated = listRoutesTask.rubric.mustNotHallucinate.filter(term => routesArtifact.includes(term));
+if (hallucinated.length > 0) {
+  throw new Error(
+    `Preflight FAILED: routes artifact contains forbidden terms: ${hallucinated.join(", ")}. ` +
+    `Extraction is inventing routes. Fix extraction first.`
+  );
+}
+```
+
+The mustContain terms as of today's pinned SHA (`19eeb4ba358781ea447762e70403f7b78994db10`):
+`_auth`, `login`, `users/$username`, `settings/profile`, `resources/healthcheck`, `admin`, `_marketing`
+
+The mustNotHallucinate terms:
+`/api/v1/`, `pages/api/`
+
+**Why this gate matters today more than anywhere else:** all three v1.x iterations on vscode-106767 spent $1.00–$2.50 per run on benches that could not possibly have passed because the critical danger zone content didn't exist in the cache. The preflight would have caught that in 50 milliseconds, before the first `claude -p` call. For v2 we refuse to make that mistake again.
+
+Additionally, the preflight doubles as a correctness floor: if the routes artifact passes, we already know the upper-bound of the rubric is achievable — the rest is just whether the model reads it.
+
+## Go/no-go after this checkpoint
 
 **Gate 1: correctness.** Arm B must pass the `list-routes` rubric at equal or higher quality than Arm A. If the appliance causes the model to produce a worse answer, the whole thesis is falsified. Kill.
 
@@ -195,14 +237,7 @@ This does NOT delete the existing arms. Add these three as a new matrix selectab
 
 **Preflight gate (runs before ANY claude invocation):**
 
-After the bench sets up briefed on the corpus, read `.briefed/artifacts/routes.md` and verify every `mustContain` term from the `list-routes` task in `quality-tasks.ts` appears in it. If any term is missing, throw with a clear error:
-
-```
-Preflight failed: routes appliance missing rubric terms: [_auth, users/$username]
-The bench would waste $ on an arm that cannot possibly pass. Fix extraction first.
-```
-
-This catches the "the appliance is broken, why waste $5 on claude invocations" failure mode we hit all day today.
+Implement exactly the check defined in the "Hard preflight gate" section above. Both the `mustContain` and `mustNotHallucinate` lists. Both must pass or the bench aborts before the first claude call. Do not soften it into a warning — a broken extraction must crash the run loudly, not produce confusing bench numbers.
 
 **File:** `src/bench/quality.ts` — add matrix config, add preflight function. ~40 lines.
 
