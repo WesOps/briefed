@@ -234,20 +234,13 @@ export function generateSimpleContracts(
       complexity: mod.complexity,
     };
 
-    // Enriched exports: signature + description + symbol-level caller count
-    if (exports.length > 0) {
-      contract.exports = exports.slice(0, 15).map((s) => {
-        // Symbol-level cross-refs: how many files import this specific symbol
-        const filePath = modExtractions.find((e) => e.symbols.includes(s))?.path || "";
-        const symRefs = depGraph.symbolRefs.get(`${filePath}#${s.name}`);
-        const callerCount = symRefs ? symRefs.length : 0;
-
-        let entry = s.signature;
-        if (s.description) entry += ` — ${s.description}`;
-        if (callerCount > 0) entry += ` [${callerCount} callers]`;
-        return entry;
-      });
-    }
+    // Intentionally NO `exports:` section. The skeleton (CLAUDE.md) is
+    // always loaded at SessionStart and already lists every exported
+    // symbol with signature, description, and caller count for this
+    // directory. Re-emitting here would double-inject the same facts on
+    // every UserPromptSubmit hook fire. Contracts only carry the JOINS
+    // the skeleton doesn't already show: call graph + module-level deps.
+    void exports; // keep the local for future delta logic
 
     // Function-level call graph: which imported symbols each function calls
     const callEntries: string[] = [];

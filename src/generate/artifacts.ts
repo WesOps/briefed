@@ -5,6 +5,8 @@ import type { FileExtraction } from "../extract/signatures.js";
 import type { Route } from "../extract/routes.js";
 import type { EnvVar } from "../extract/env.js";
 import type { SchemaModel } from "../extract/schema.js";
+import type { DepGraph } from "../extract/depgraph.js";
+import type { TestMapping } from "../extract/tests.js";
 
 /**
  * Generate pre-built task-native artifacts into .briefed/artifacts/.
@@ -17,6 +19,8 @@ export function generateArtifacts(
   envVars: EnvVar[],
   routes: Route[],
   schemas: SchemaModel[],
+  depGraph?: DepGraph,
+  testMappings?: TestMapping[],
 ): void {
   const artifactsDir = join(root, ".briefed", "artifacts");
   if (!existsSync(artifactsDir)) mkdirSync(artifactsDir, { recursive: true });
@@ -28,6 +32,19 @@ export function generateArtifacts(
   const authMd = buildAuthContext(routes, extractions, schemas);
   if (authMd) {
     writeFileSync(join(artifactsDir, "auth-context.md"), authMd);
+  }
+
+  // Cross-join artifacts — require the dep graph + test mappings
+  if (depGraph && testMappings) {
+    const routeGraphMd = buildRouteGraph(routes, extractions, schemas, testMappings);
+    if (routeGraphMd) {
+      writeFileSync(join(artifactsDir, "route-graph.md"), routeGraphMd);
+    }
+
+    const impactMd = buildImpactMap(extractions, depGraph, routes, schemas, testMappings);
+    if (impactMd) {
+      writeFileSync(join(artifactsDir, "impact-map.md"), impactMd);
+    }
   }
 }
 
@@ -89,25 +106,21 @@ export function buildEnvAudit(root: string, vars: EnvVar[]): string {
 
 // ─── auth context ─────────────────────────────────────────────────────────────
 
-const AUTH_PATH_RE = /auth|login|logout|session|signup|register|password|token|oauth/i;
 const AUTH_FILE_RE = /(?:auth|session|login|password|user|token|oauth|credential)/i;
 
 /**
- * Build an auth context artifact: auth routes, traced call chain 2 levels
- * deep from each handler, key auth files, session tables.
+ * Build an auth context artifact: auth-related files and session/auth tables.
  *
- * The trace is static (based on sym.calls) so it's best-effort — dynamic
- * dispatch and framework magic won't show up, but direct function calls will.
+ * Auth routes and their handler call traces are deliberately NOT included
+ * here — route-graph.md covers every route (including auth-tagged ones) with
+ * the same call trace + body schema + tests. Duplicating here would make the
+ * model see every auth route twice when both artifacts load in the same turn.
  */
 function buildAuthContext(
-  routes: Route[],
+  _routes: Route[],
   extractions: FileExtraction[],
   schemas: SchemaModel[],
 ): string | null {
-  const authRoutes = routes.filter(
-    (r) => r.auth !== undefined || AUTH_PATH_RE.test(r.path),
-  );
-
   const authFiles = extractions.filter(
     (e) => AUTH_FILE_RE.test(e.path),
   );
@@ -116,55 +129,9 @@ function buildAuthContext(
     (s) => AUTH_FILE_RE.test(s.name),
   );
 
-  if (authRoutes.length === 0 && authFiles.length === 0) return null;
-
-  // Build a name → symbol lookup for call tracing
-  const symByName = new Map<string, { file: string; desc: string | null }>();
-  for (const e of extractions) {
-    for (const s of e.symbols) {
-      if (s.exported) {
-        symByName.set(s.name.split(".").pop()!, { file: e.path, desc: s.description ?? null });
-      }
-    }
-  }
-
-  // Build a symbol → calls map for 2-level tracing
-  const symCalls = new Map<string, string[]>();
-  for (const e of extractions) {
-    for (const s of e.symbols) {
-      if (s.calls && s.calls.length > 0) {
-        symCalls.set(s.name.split(".").pop()!, s.calls.map((c) => c.split(".").pop()!));
-      }
-    }
-  }
-
-  function traceHandler(handler: string, depth: number): string[] {
-    if (depth === 0) return [];
-    const calls = symCalls.get(handler) ?? [];
-    const lines: string[] = [];
-    for (const callee of calls.slice(0, 6)) {
-      const info = symByName.get(callee);
-      const loc = info ? ` (\`${info.file}\`)` : "";
-      const desc = info?.desc ? ` — ${info.desc}` : "";
-      lines.push(`  ${"  ".repeat(2 - depth)}→ \`${callee}\`${loc}${desc}`);
-      lines.push(...traceHandler(callee, depth - 1));
-    }
-    return lines;
-  }
+  if (authFiles.length === 0 && authTables.length === 0) return null;
 
   const lines: string[] = ["# Authentication Context"];
-
-  if (authRoutes.length > 0) {
-    lines.push("", "## Auth Routes & Call Traces");
-    for (const r of authRoutes) {
-      const auth = r.auth ? ` [${r.auth}]` : "";
-      lines.push(`- **${r.method}** \`${r.path}\`${auth} — \`${r.file}\``);
-      if (r.handler !== "default") {
-        lines.push(`  handler: \`${r.handler}\``);
-        lines.push(...traceHandler(r.handler, 2));
-      }
-    }
-  }
 
   if (authFiles.length > 0) {
     lines.push("", "## Auth-Related Files");
@@ -190,4 +157,239 @@ function buildAuthContext(
   }
 
   return lines.join("\n") + "\n";
+}
+
+// ─── route graph ──────────────────────────────────────────────────────────────
+
+/**
+ * Build the route → handler → call-chain → schema → tests join.
+ *
+ * For every route, emits one block with the handler's 2-level static call
+ * trace, the detected body schema expanded to its fields, and the test file
+ * that most likely exercises the handler. Answers "what does POST /api/users
+ * actually touch?" in one lookup instead of four.
+ */
+function buildRouteGraph(
+  routes: Route[],
+  extractions: FileExtraction[],
+  schemas: SchemaModel[],
+  testMappings: TestMapping[],
+): string | null {
+  if (routes.length === 0) return null;
+
+  // Build lookup indices
+  const symByName = new Map<string, { file: string; desc: string | null }>();
+  const symCalls = new Map<string, string[]>();
+  for (const e of extractions) {
+    for (const s of e.symbols) {
+      if (!s.exported) continue;
+      const short = s.name.split(".").pop()!;
+      symByName.set(short, { file: e.path, desc: s.description ?? null });
+      if (s.calls && s.calls.length > 0) {
+        symCalls.set(short, s.calls.map((c) => c.split(".").pop()!));
+      }
+    }
+  }
+
+  const schemaByName = new Map<string, SchemaModel>();
+  for (const m of schemas) schemaByName.set(m.name, m);
+
+  // Test mappings indexed by source file — routes' handler file → test file
+  const testsByFile = new Map<string, TestMapping>();
+  for (const tm of testMappings) testsByFile.set(tm.sourceFile, tm);
+
+  function traceCalls(root: string, depth: number, seen: Set<string>): string[] {
+    if (depth === 0) return [];
+    if (seen.has(root)) return [];
+    seen.add(root);
+    const out: string[] = [];
+    const calls = symCalls.get(root) ?? [];
+    for (const callee of calls.slice(0, 5)) {
+      const info = symByName.get(callee);
+      const loc = info ? ` \`${info.file}\`` : "";
+      const desc = info?.desc ? ` — ${info.desc}` : "";
+      const indent = "  ".repeat(3 - depth);
+      out.push(`  ${indent}→ \`${callee}\`${loc}${desc}`);
+      out.push(...traceCalls(callee, depth - 1, seen));
+    }
+    return out;
+  }
+
+  // Deduplicate routes by (method, path) to avoid emitting the same chain twice
+  // when regex overlap catches a route under multiple frameworks.
+  const seenKey = new Set<string>();
+  const lines: string[] = [
+    "# Route Graph",
+    "",
+    "Every route, its handler chain (2 levels deep, static), request schema fields, and matching test file. One lookup answers \"what does this route touch?\".",
+    "",
+  ];
+
+  for (const r of routes) {
+    const key = `${r.method} ${r.path}`;
+    if (seenKey.has(key)) continue;
+    seenKey.add(key);
+
+    const tags: string[] = [];
+    if (r.auth) tags.push(r.auth);
+    if (r.bodySchema) tags.push(`body:${r.bodySchema}`);
+    const tagStr = tags.length > 0 ? ` [${tags.join(", ")}]` : "";
+
+    lines.push(`## ${r.method} ${r.path}${tagStr}`);
+    lines.push(`- file: \`${r.file}\``);
+    if (r.handler && r.handler !== r.file && r.handler !== "default") {
+      lines.push(`- handler: \`${r.handler}\``);
+      const trace = traceCalls(r.handler, 2, new Set());
+      if (trace.length > 0) {
+        lines.push("- call chain:");
+        lines.push(...trace);
+      }
+    }
+
+    // Body schema → model fields (if detected and known)
+    if (r.bodySchema) {
+      const stripped = r.bodySchema.replace(/Schema$|Input$|Dto$/i, "");
+      const model = schemaByName.get(r.bodySchema) ?? schemaByName.get(stripped);
+      if (model) {
+        const fields = model.fields
+          .slice(0, 6)
+          .map((f) => `${f.name}:${f.type}${f.optional ? "?" : ""}`)
+          .join(", ");
+        lines.push(`- schema fields: ${fields}`);
+      }
+    }
+
+    // Test mapping: prefer the route's own file, fall back to handler file
+    const tm = testsByFile.get(r.file);
+    if (tm && tm.testCount > 0) {
+      lines.push(`- tests: \`${tm.testFile}\` (${tm.testCount} tests, confidence ${(tm.confidence).toFixed(2)})`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+// ─── impact map ───────────────────────────────────────────────────────────────
+
+/**
+ * Build the changed-file → impacted-surfaces join.
+ *
+ * For every file with non-trivial fan-in, project its transitive dependents
+ * onto (routes, schemas, tests). Answers "if I edit X, which routes and
+ * tests are in scope?" without running a second BFS at query time.
+ *
+ * Capped at top-N files by dependent count to stay under a token budget.
+ */
+function buildImpactMap(
+  extractions: FileExtraction[],
+  depGraph: DepGraph,
+  routes: Route[],
+  schemas: SchemaModel[],
+  testMappings: TestMapping[],
+): string | null {
+  if (extractions.length === 0) return null;
+
+  // Build fast lookups: file → routes defined in it, file → schemas, file → test mapping
+  const routesByFile = new Map<string, Route[]>();
+  for (const r of routes) {
+    const arr = routesByFile.get(r.file) ?? [];
+    arr.push(r);
+    routesByFile.set(r.file, arr);
+  }
+
+  const schemasByFile = new Map<string, SchemaModel[]>();
+  for (const s of schemas) {
+    const arr = schemasByFile.get(s.source) ?? [];
+    arr.push(s);
+    schemasByFile.set(s.source, arr);
+  }
+
+  const testMapByFile = new Map<string, TestMapping>();
+  for (const tm of testMappings) testMapByFile.set(tm.sourceFile, tm);
+
+  // BFS transitive dependents up to a bounded depth. Depgraph's inEdges give
+  // direct importers; we walk them breadth-first, capping at MAX_DEPTH. Depth
+  // 2 is the sweet spot — deeper bleeds low-level utilities into every test.
+  const MAX_DEPTH = 2;
+  function transitiveDependents(file: string): Set<string> {
+    const visited = new Set<string>([file]);
+    const queue: Array<[string, number]> = [[file, 0]];
+    while (queue.length > 0) {
+      const [cur, depth] = queue.shift()!;
+      if (depth >= MAX_DEPTH) continue;
+      const node = depGraph.nodes.get(cur);
+      if (!node) continue;
+      for (const dep of node.inEdges) {
+        if (visited.has(dep)) continue;
+        visited.add(dep);
+        queue.push([dep, depth + 1]);
+      }
+    }
+    visited.delete(file);
+    return visited;
+  }
+
+  // Rank files by fan-in (how many things transitively depend on them).
+  // Cheap proxy: in-edge count. The real transitive count is expensive; this
+  // is close enough for "show me the top 30 most-impactful files".
+  const ranked = extractions
+    .map((e) => {
+      const node = depGraph.nodes.get(e.path);
+      return { file: e.path, fanIn: node?.inEdges.length ?? 0 };
+    })
+    .filter((r) => r.fanIn > 0 || routesByFile.has(r.file) || schemasByFile.has(r.file))
+    .sort((a, b) => b.fanIn - a.fanIn)
+    .slice(0, 30);
+
+  if (ranked.length === 0) return null;
+
+  const lines: string[] = [
+    "# Impact Map",
+    "",
+    "For each high-fan-in file, the routes, schemas, and tests transitively affected by editing it. Answers \"if I change X, what's in scope?\".",
+    "",
+  ];
+
+  for (const { file, fanIn } of ranked) {
+    const deps = transitiveDependents(file);
+    // Include the file itself for direct hits
+    const scope = new Set([file, ...deps]);
+
+    const hitRoutes: string[] = [];
+    const hitSchemas: string[] = [];
+    const hitTests = new Set<string>();
+
+    for (const f of scope) {
+      const rs = routesByFile.get(f);
+      if (rs) for (const r of rs) hitRoutes.push(`${r.method} ${r.path}`);
+      const ss = schemasByFile.get(f);
+      if (ss) for (const s of ss) hitSchemas.push(s.name);
+      const tm = testMapByFile.get(f);
+      if (tm) hitTests.add(tm.testFile);
+    }
+
+    // Skip files whose impact is just themselves — nothing to report.
+    if (hitRoutes.length === 0 && hitSchemas.length === 0 && hitTests.size === 0 && fanIn === 0) {
+      continue;
+    }
+
+    lines.push(`## \`${file}\``);
+    lines.push(`- fan-in: ${fanIn}`);
+    if (hitRoutes.length > 0) {
+      const uniq = [...new Set(hitRoutes)].slice(0, 10);
+      lines.push(`- routes: ${uniq.join(", ")}`);
+    }
+    if (hitSchemas.length > 0) {
+      const uniq = [...new Set(hitSchemas)].slice(0, 10);
+      lines.push(`- schemas: ${uniq.join(", ")}`);
+    }
+    if (hitTests.size > 0) {
+      const uniq = [...hitTests].slice(0, 10);
+      lines.push(`- tests: ${uniq.join(", ")}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
 }

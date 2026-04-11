@@ -362,7 +362,7 @@ process.stdin.on("end", () => {
         if (relMod && !loaded.has(relMod.file) && used < budget) {
           const contract = safeRead(join(contractsDir, relMod.file));
           if (contract && used + contract.length <= budget) {
-            output.push("# " + label + ": " + relMod.dir + "\n" + contract);
+            output.push("# " + label + ": " + relMod.dir + "\\n" + contract);
             used += contract.length;
             loaded.add(relMod.file);
           }

@@ -127,7 +127,7 @@ export async function initCommand(opts: InitOptions) {
   }
 
   // Step 6.5: Generate task-native artifacts for hook injection
-  generateArtifacts(root, result.extractions, result.envVars, result.routes, result.schemas);
+  generateArtifacts(root, result.extractions, result.envVars, result.routes, result.schemas, result.depGraph, result.testMappings);
 
   // Step 7: Write all outputs
   const outputSummary = writeOutputs(root, result, enrichedSkeleton, {

@@ -15,8 +15,8 @@ signatures.ts ★16
   interface FileExtraction — True for `import type { ... }` — erased at runtime, doesn't create real coupl... [15 callers]
   extractFile(filePath: string, _rootPath: string, content?: string): FileExtraction — Extract symbols and imports from a source file. [3 callers]
 ast.ts ★2: extractWithAst — AST-based extraction for TypeScript/JavaScript files using the TS compiler API.
-depgraph.ts ★8
-  interface DepGraph [7 callers]
+depgraph.ts ★9
+  interface DepGraph [8 callers]
   buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions. [3 callers]
 routes.ts ★6
   interface Route [2 callers]
@@ -36,16 +36,16 @@ env.ts ★5
   interface EnvVar [2 callers]
   extractEnvVars(root: string): EnvVar[] — Extract environment variables the project expects. [3 callers]
   formatEnvVars(vars: EnvVar[]): string — Format env vars for skeleton inclusion. [2 callers]
+tests.ts ★4
+  interface TestCandidate
+  interface TestMapping [3 callers]
+  findTestMappings(sourceFiles: string[], root: string): TestMapping[] — Find test files that correspond to source files.
+  extractTestAssertions(content: string, ext: string): Map<string, string[]> — Extract assertion lines from test blocks, mapped by test name.
 staleness.ts ★2: StalenessReport, checkStaleness — Check if the briefed context is stale (source files changed since last index)., formatStaleness — Format staleness report for display.
 monorepo.ts ★3
   interface WorkspaceInfo
   interface WorkspacePackage
   detectMonorepo(cwd: string): WorkspaceInfo — Detect if we're in a monorepo and identify packages. [3 callers]
-tests.ts ★3
-  interface TestCandidate
-  interface TestMapping [2 callers]
-  findTestMappings(sourceFiles: string[], root: string): TestMapping[] — Find test files that correspond to source files.
-  extractTestAssertions(content: string, ext: string): Map<string, string[]> — Extract assertion lines from test blocks, mapped by test name.
 complexity.ts ★5
   interface ComplexityScore [4 callers]
   computeComplexity(extraction: FileExtraction, depGraph: DepGraph, root, content?: string): ComplexityScore — Compute complexity score for a file. [2 callers]
