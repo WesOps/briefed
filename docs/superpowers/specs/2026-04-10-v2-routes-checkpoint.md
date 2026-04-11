@@ -307,6 +307,38 @@ Total: ~270 lines of production code + tests. No deletions in this checkpoint.
 
 **If all three arms fail correctness:** The task rubric is too strict or the model's baseline is too weak. Not a briefed problem. Investigate rubric or bench config.
 
+## Phase 3 target — what the routes checkpoint is actually for
+
+The routes checkpoint is not the product. It is the minimum falsifiable test of the answer-appliance delivery channel. The actual market moat — the thing that differentiates briefed from Aider repo maps, Cursor indexing, Cody semantic search, and Sourcegraph code graph — is a **repo-specific change map**, not a repo-specific knowledge base.
+
+A change map, given a bug/feature description, produces deterministically:
+
+1. **Likely edit targets** — BM25-matched files ranked by issue-term overlap with symbol names, docs, and nearby identifiers. Top 3-5, with scores.
+2. **Invariants each edit target maintains** — from static analysis: return type contracts, null/throw signaling conventions, required state. No LLM speculation.
+3. **Tests that cover each target** — from test-map. Names + assertion extraction.
+4. **Blast radius** — from dep graph BFS. Direct + transitive importers.
+
+No LLM at any step. Everything already computable from existing extractors.
+
+**Why this is the moat:**
+
+- Orientation tools (Aider, Cursor, Cody) tell the agent "here's the codebase." They do not tell it "here's where to edit for THIS bug, here's what to preserve, here's what to verify."
+- Review tools (CodeRabbit, Graphite) run *after* the patch. A change map runs *before* exploration.
+- Augment is the closest competitor — it claims task-path mapping across layers — so that is the actual competitive shape, not Cursor or Aider.
+- A deterministic change map requires a robust extraction pipeline as substrate. briefed has spent weeks building that substrate. That's the sunk cost that becomes a moat: nobody else can skip the pipeline work.
+
+**Why we can't start here:**
+
+A change map is speculative by nature — it predicts which files matter for a bug. The v1.x danger zones were a proto-change-map and they failed because the selection heuristic (PageRank + churn + complexity) was wrong for bug-prediction. Pivoting directly to change maps now skips the validation of the simpler answer-appliance thesis and repeats the same mistake.
+
+**The phased path:**
+
+- **Phase 1 (tomorrow): Routes checkpoint.** One deterministic appliance, one task, one verdict. Proves or falsifies "any precomputed answer appliance can delete search steps."
+- **Phase 2: Architecture + env-audit appliances.** Two more deterministic question classes. Proves the pattern generalizes. End of phase 2: functional but commoditized.
+- **Phase 3: Change map.** Built from the same substrate (routes, schema, dep graph, tests, signatures) but answers a harder question. Only attempted if phases 1 and 2 pass their checkpoints.
+
+Phase 3 is explicitly NOT this checkpoint's scope. It is documented here so future iterations don't re-derive the moat thesis from scratch and so "ship appliances and call it done" is not the product endpoint.
+
 ## Explicit non-goals
 
 - Not touching auth-flow in this checkpoint. Codex is right — auth is where deterministic stitching turns into speculation. Prove the concept on routes first.
