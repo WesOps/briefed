@@ -126,6 +126,7 @@ const contractsDir = join(briefedDir, "contracts");
 const indexPath = join(briefedDir, "index.json");
 const testMapPath = join(briefedDir, "test-map.json");
 const artifactsDir = join(briefedDir, "artifacts");
+const dangerIndexPath = join(briefedDir, "danger-index.json");
 
 // Security: verify a path is inside .briefed/ before reading
 const realBriefedDir = realpathSync(briefedDir);
@@ -184,6 +185,52 @@ process.stdin.on("end", () => {
     if (!safePrompt || !safeExists(indexPath)) {
       process.exit(0);
       return;
+    }
+
+    // Danger zone injection — BM25-match user prompt against flattened danger
+    // zones and inject the top matches. This is guaranteed delivery of critical
+    // constraints without requiring the model to navigate to the right directory.
+    const dangerOutputs = [];
+    if (safeExists(dangerIndexPath)) {
+      try {
+        const dangerIndex = JSON.parse(safeRead(dangerIndexPath) || "{}");
+        const items = dangerIndex.items || [];
+        const dIdf = (dangerIndex.bm25 && dangerIndex.bm25.idf) || {};
+        const dAvgdl = (dangerIndex.bm25 && dangerIndex.bm25.avgdl) || 5;
+        const promptTerms = safePrompt.toLowerCase().replace(/[^a-z0-9\\s]/g, " ").split(/\\s+/).filter((t) => t.length >= 4);
+        if (promptTerms.length > 0 && items.length > 0) {
+          const k1 = 1.5, b = 0.75;
+          const scored = items.map((item) => {
+            const kws = item.keywords || [];
+            const dl = kws.length || 1;
+            let score = 0;
+            for (const term of promptTerms) {
+              const matching = kws.filter((kw) =>
+                kw === term ||
+                (term.length >= 4 && (kw.startsWith(term) || kw.endsWith(term))) ||
+                (kw.length >= 4 && (term.startsWith(kw) || term.endsWith(kw)))
+              );
+              if (matching.length === 0) continue;
+              const tf = matching.length;
+              let bestIdf = 0;
+              for (const kw of matching) {
+                const v = dIdf[kw];
+                if (v !== undefined && v > bestIdf) bestIdf = v;
+              }
+              if (bestIdf === 0) continue;
+              score += bestIdf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl / dAvgdl));
+            }
+            return { item, score };
+          })
+          .filter((s) => s.score > 2.0) // confidence threshold — only strong matches
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 5); // top 5 danger zones max
+
+          for (const { item } of scored) {
+            dangerOutputs.push("\u26A0 " + item.file + ":" + item.symbol + " \u2014 " + item.danger);
+          }
+        }
+      } catch {}
     }
 
     // Task classifier — inject pre-built artifacts for known query types.
@@ -374,16 +421,22 @@ process.stdin.on("end", () => {
       }
     }
 
+    // Danger zones go at the TOP — critical constraints the model must see first
+    const dangerSection = dangerOutputs.length > 0
+      ? "# \u26A0 DANGER ZONES (do NOT ignore these — call briefed_symbol for full context before editing)\\n" + dangerOutputs.join("\\n") + "\\n---\\n"
+      : "";
+
     const allParts = [
       ...artifactOutputs.map((a) => a.content),
       ...output,
     ];
-    if (allParts.length > 0) {
+    if (allParts.length > 0 || dangerSection) {
       const artifactLabels = artifactOutputs.map((a) => a.label);
       const moduleNames = scored.slice(0, loaded.size).map((s) => s.mod.dir);
-      const allLabels = [...artifactLabels, ...moduleNames].join(", ");
+      const dangerLabel = dangerOutputs.length > 0 ? ["danger-zones"] : [];
+      const allLabels = [...dangerLabel, ...artifactLabels, ...moduleNames].join(", ");
       const header = "# briefed: injected " + allLabels + "\\n";
-      process.stdout.write(header + allParts.join("\\n---\\n"));
+      process.stdout.write(header + dangerSection + allParts.join("\\n---\\n"));
     }
   } catch {
     // Fail silently

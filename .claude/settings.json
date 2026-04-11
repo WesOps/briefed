@@ -12,17 +12,7 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"/opt/homebrew/Cellar/node/23.11.0/bin/node\" \"/Users/wcampbell/briefed/.briefed/hooks/prompt-submit.js\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ]
+    "UserPromptSubmit": []
   },
   "mcpServers": {
     "briefed": {

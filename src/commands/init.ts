@@ -73,6 +73,10 @@ export async function initCommand(opts: InitOptions) {
         updateExtractionCache(root, result.extractions);
         console.log(`  Enriched ${merged} symbol descriptions from deep analysis`);
       }
+      // Write danger-index.json for UserPromptSubmit hook matching.
+      // The hook BM25-matches user prompts against danger zones and injects
+      // relevant ones directly, no navigation required.
+      writeDangerIndex(root, deepResult.dangerZones);
     }
   }
 
@@ -177,4 +181,87 @@ export async function initCommand(opts: InitOptions) {
   console.log("");
   console.log("  Context auto-updates on every commit. No CI needed.");
   console.log("  Works with: Claude Code, Cursor, Copilot, and any tool that reads AGENTS.md");
+}
+
+/**
+ * Write a flat danger-zone index for the UserPromptSubmit hook.
+ *
+ * Each entry has searchable keywords (file basename tokens + symbol name tokens)
+ * and the full danger text. The hook BM25-matches user prompts against the
+ * keywords and injects the top-N matching danger zones directly, so critical
+ * warnings reach the model even without directory navigation.
+ */
+function writeDangerIndex(root: string, dangerZones: Map<string, Map<string, string>>): void {
+  interface DangerEntry {
+    file: string;
+    symbol: string;
+    danger: string;
+    keywords: string[];
+  }
+
+  const items: DangerEntry[] = [];
+  for (const [filePath, zones] of dangerZones) {
+    const fname = filePath.split("/").pop() || filePath;
+    const fnameBase = fname.replace(/\.[^.]+$/, ""); // strip extension
+    // Also include directory components as keywords (e.g. "suggest" from "src/vs/editor/contrib/suggest/")
+    const dirTokens = filePath.split("/").filter(t => t && t.length >= 4 && !["src", "lib", "app"].includes(t.toLowerCase()));
+
+    for (const [symbol, danger] of zones) {
+      const keywords = new Set<string>();
+      // Symbol name tokens (camelCase split)
+      for (const t of symbol.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().split(/\s+/)) {
+        if (t.length >= 4) keywords.add(t);
+      }
+      // File name tokens
+      for (const t of fnameBase.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().split(/\s+/)) {
+        if (t.length >= 4) keywords.add(t);
+      }
+      // Directory tokens (for context like "suggest", "completion", "auth")
+      for (const t of dirTokens) {
+        keywords.add(t.toLowerCase());
+      }
+      // Danger text tokens (top content words)
+      const dangerTokens = danger.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(t => t.length >= 5);
+      const seen = new Set<string>();
+      for (const t of dangerTokens) {
+        if (seen.size >= 15) break;
+        if (!seen.has(t)) {
+          seen.add(t);
+          keywords.add(t);
+        }
+      }
+
+      items.push({
+        file: filePath,
+        symbol,
+        danger,
+        keywords: [...keywords],
+      });
+    }
+  }
+
+  // Compute BM25 IDF over the items (each item is a "document" with its keywords)
+  const N = items.length;
+  const docFreq = new Map<string, number>();
+  for (const item of items) {
+    const unique = new Set(item.keywords);
+    for (const kw of unique) {
+      docFreq.set(kw, (docFreq.get(kw) || 0) + 1);
+    }
+  }
+  const idf: Record<string, number> = {};
+  for (const [kw, df] of docFreq) {
+    idf[kw] = Math.log(1 + (N - df + 0.5) / (df + 0.5));
+  }
+  const avgdl = items.reduce((s, it) => s + it.keywords.length, 0) / Math.max(1, items.length);
+
+  const briefedDir = join(root, ".briefed");
+  if (!existsSync(briefedDir)) mkdirSync(briefedDir, { recursive: true });
+  writeFileSync(
+    join(briefedDir, "danger-index.json"),
+    JSON.stringify({ items, bm25: { idf, avgdl } }),
+  );
+  if (items.length > 0) {
+    console.log(`  Danger index: ${items.length} annotated symbols`);
+  }
 }
