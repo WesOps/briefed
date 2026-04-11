@@ -246,6 +246,22 @@ process.stdin.on("end", () => {
         artifact: "auth-context.md",
         label: "auth-context",
       },
+      {
+        // Route-graph fires on explicit route references: HTTP verb + path,
+        // "endpoint"/"handler"/"API route", or literal "/api/" slugs. Kept
+        // narrow enough that general mentions of "routing" don't trigger it.
+        patterns: [/\\b(?:GET|POST|PUT|PATCH|DELETE)\\s+\\//i, /\\bendpoint\\b/i, /\\bhandler\\b/i, /\\bapi\\s+route\\b/i, /\\broute\\s+handler\\b/i, /\\/api\\//i, /what.*(?:route|endpoint).*(?:does|touch)/i],
+        artifact: "route-graph.md",
+        label: "route-graph",
+      },
+      {
+        // Impact map fires on change-scoping questions: "if I edit/change X",
+        // "what breaks", "blast radius", "impact of", "affected by". These are
+        // the prompts where knowing routes/tests touched saves turns.
+        patterns: [/\\bblast\\s*radius\\b/i, /\\bimpact\\b/i, /\\baffected\\b/i, /\\bif\\s+I\\s+(?:edit|change|modify|refactor|remove|rename)/i, /what.*(?:breaks|depends|uses).*(?:if|when)/i, /\\bscope\\s+of\\s+(?:the\\s+)?(?:change|edit|refactor)/i],
+        artifact: "impact-map.md",
+        label: "impact-map",
+      },
     ];
 
     const artifactOutputs = [];

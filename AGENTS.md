@@ -1,33 +1,33 @@
 <!-- briefed:agents:start -->
 # briefed: typescript, javascript project
 Stack: typescript, javascript
-Files: 111 source files across 10 directories
+Files: 112 source files across 10 directories
 
 ## src/extract/ (32 files)
-signatures.ts ★16
-  interface Symbol — Extracted symbol from a source file. [4 callers]
+signatures.ts ★17
+  interface Symbol — Extracted symbol from a source file. [5 callers]
   type SymbolKind = | "function"
   | "class"
   | "interface"
   | "type"
   | "enu...
   interface ImportRef — Import reference found in a file.
-  interface FileExtraction — True for `import type { ... }` — erased at runtime, doesn't create real coupl... [15 callers]
+  interface FileExtraction — True for `import type { ... }` — erased at runtime, doesn't create real coupl... [16 callers]
   extractFile(filePath: string, _rootPath: string, content?: string): FileExtraction — Extract symbols and imports from a source file. [3 callers]
 ast.ts ★2: extractWithAst — AST-based extraction for TypeScript/JavaScript files using the TS compiler API.
-depgraph.ts ★9
+depgraph.ts ★10
   interface DepGraph [8 callers]
-  buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions. [3 callers]
-routes.ts ★6
-  interface Route [2 callers]
+  buildDepGraph(extractions: FileExtraction[], root: string): DepGraph — Build a dependency graph from file extractions. [4 callers]
+routes.ts ★7
+  interface Route [3 callers]
   extractRoutes(root: string): Route[] — Extract API routes from the codebase. [4 callers]
   formatRoutes(routes: Route[]): string — Format routes for skeleton inclusion. [2 callers]
 scanner.ts ★5
   interface DiscoveredFile
   interface ScanResult
   scanFiles(root: string): ScanResult — Discover all parseable source files in a project. [4 callers]
-schema.ts ★5
-  interface SchemaModel [2 callers]
+schema.ts ★6
+  interface SchemaModel [3 callers]
   interface SchemaField
   interface SchemaRelation
   extractSchemas(root: string): SchemaModel[] — Extract database schema from ORM definition files. [3 callers]
@@ -36,9 +36,9 @@ env.ts ★5
   interface EnvVar [2 callers]
   extractEnvVars(root: string): EnvVar[] — Extract environment variables the project expects. [3 callers]
   formatEnvVars(vars: EnvVar[]): string — Format env vars for skeleton inclusion. [2 callers]
-tests.ts ★4
+tests.ts ★5
   interface TestCandidate
-  interface TestMapping [3 callers]
+  interface TestMapping [4 callers]
   findTestMappings(sourceFiles: string[], root: string): TestMapping[] — Find test files that correspond to source files.
   extractTestAssertions(content: string, ext: string): Map<string, string[]> — Extract assertion lines from test blocks, mapped by test name.
 staleness.ts ★2: StalenessReport, checkStaleness — Check if the briefed context is stale (source files changed since last index)., formatStaleness — Format staleness report for display.
@@ -75,10 +75,11 @@ depgraph.test.ts:
 deps.test.ts: 
 routes.test.ts: GET
 staleness.test.ts: 
+tests.test.ts: 
 
-<!-- briefed skeleton: 24 files, ~1205 tokens -->
+<!-- briefed skeleton: 25 files, ~1210 tokens -->
 Conventions: camelCase for functions and methods, PascalCase for types, classes, and interfaces, uses try/catch for error handling, throws custom error classes (not generic Error), predominantly async/await (not callbacks), prefers named exports over default exports, test files are in separate test/ directory, uses .test.{ext} naming convention
-Tests: 34 source files have matching test files
+Tests: 35 source files have matching test files
 Commands:
   build: tsc
   dev: tsc --watch
@@ -87,7 +88,7 @@ Commands:
   start: node dist/cli.js
 Required env: config: BRIEFED_DEBUG, USERPROFILE, APPDATA
 External deps (Context7 detected — ask Context7 for public docs by version):
-  - vitest@4.1.2 — 33 imports
+  - vitest@4.1.2 — 34 imports
   - @modelcontextprotocol/sdk@1.29.0 — 10 imports
   - glob@13.0.6 — 6 imports
   - simple-git@3.33.0 — 2 imports

@@ -175,7 +175,7 @@ function buildAuthContext(
  * that most likely exercises the handler. Answers "what does POST /api/users
  * actually touch?" in one lookup instead of four.
  */
-function buildRouteGraph(
+export function buildRouteGraph(
   routes: Route[],
   extractions: FileExtraction[],
   schemas: SchemaModel[],
@@ -287,7 +287,7 @@ function buildRouteGraph(
  *
  * Capped at top-N files by dependent count to stay under a token budget.
  */
-function buildImpactMap(
+export function buildImpactMap(
   extractions: FileExtraction[],
   depGraph: DepGraph,
   routes: Route[],
